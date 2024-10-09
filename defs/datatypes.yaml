@@ -1,0 +1,47 @@
+---
+kind: Datainfo
+name: datainfo
+version: 1
+description: |
+  base datatype
+members:
+  type:
+    designates:
+      int
+      string
+
+---
+kind: Datatype
+name: int
+version: 1
+description: |
+  An int
+dataty: int
+members:
+  min:
+    dataty:
+      int
+  max:
+    dataty:
+      int
+  unit:
+    dataty:
+      string
+    optional: true
+---
+kind: Datatype
+name: string
+version: 1
+description: |
+  A string
+dataty: str
+members:
+  minchars:
+    optional: true
+    dataty: int
+  maxchars:
+    optional: true
+    dataty: int
+  isUTF8:
+    optional: true
+    dataty: bool

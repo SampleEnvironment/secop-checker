@@ -1,0 +1,11 @@
+---
+kind: Version
+name: Version 1.0
+version: 1
+description: version
+definitions:
+  - Interface:Readable:
+    min: 1  # TODO: ???
+    max: 1
+  - Interface:Writable:1
+  - Interface:Drivable:1
