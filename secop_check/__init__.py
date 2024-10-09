@@ -2,14 +2,12 @@ import json
 import re
 import sys
 from collections import namedtuple
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 import yaml
 
-
-class CheckerError(Exception):
-    pass
 
 # TODO:
 # - version resolution
@@ -27,10 +25,6 @@ class Version(str, Enum):
     LATEST = 'latest'
     V1_0 = '1.0'
     V1_1 = '1.1'
-
-
-class Checker:  # TODO
-    """Base"""
 
 
 Spec = namedtuple('Spec', 'all, properties, prop_map')
@@ -56,30 +50,30 @@ def load_and_mangle(version):
                 if thing not in props_for_thing:
                     props_for_thing[thing] = {}
                 props_for_thing[thing][spec['name']] = spec
-    #print(props.keys())
-    #for k, v in props_for_thing.items():
-    #    print(k)
-    #    for x, y in v.items():
-    #        print("\t", x)
+    # print(props.keys())
+    # for k, v in props_for_thing.items():
+    #     print(k)
+    #     for x, y in v.items():
+    #         print("\t", x)
 
     return Spec(specs, props, props_for_thing)
 
 
-def check(path, version=Version.LATEST):
+def check(path, version=Version.LATEST, output_json=False):
     if path == '-':
-        checks(sys.stdin.read(), version)
+        checks(sys.stdin.read(), version, output_json=output_json)
     if isinstance(path, str):
         path = Path(path)
     with path.open('r', encoding='utf-8') as f:
-        checks(f.read(), version)
+        checks(f.read(), version, output_json=output_json)
 
 
 def check_part(node, nodekind, context, spec):
     # check that node is an object!
     props = spec.prop_map[nodekind]
-    reqired = set([prop for prop, asdf in props.items() if not asdf.get('optional', False)])
+    required = set([prop for prop, asdf in props.items() if not asdf.get('optional', False)])
     for member, mvalues in node.items():
-        reqired.discard(member)
+        required.discard(member)
         if member not in props:
             # check custom property
             if not member.startswith('_'):
@@ -87,21 +81,21 @@ def check_part(node, nodekind, context, spec):
         if member == 'modules':
             for mod, moddesc in mvalues.items():
                 check_part(moddesc, 'Interface', {'name': mod}, spec)
-    if reqired:
-        print('missing required properties:', reqired)
+    if required:
+        print('missing required properties:', required)
 
 
-def checks(description, version=Version.LATEST):
+def checks(description, version=Version.LATEST, output_json=False):
+    """check string"""
     try:
         desc = json.loads(description)
     except json.JSONDecodeError as e:
         print(e.msg, e.pos, e.lineno, e.colno)
         raise ValueError("invalid json") from e
-    print("checking...")
     spec = load_and_mangle(version)
-    #check_part(desc, 'SECNode', {}, spec)
-    step_through(desc, spec)
-    #visitor_step_through_outer(desc, spec)
+    # check_part(desc, 'SECNode', {}, spec)
+    # step_through(desc, spec)
+    visitor_step_through_outer(desc, spec, output_json)
 
 
 def step_through(desc, spec):
@@ -125,10 +119,10 @@ def step_through(desc, spec):
 
 def check_applicable_properties(desc, nodekind, spec):
     props = spec.prop_map[nodekind]
-    reqired = set([prop for prop, asdf in props.items() if not asdf.get('optional', False)])
+    required = set([prop for prop, asdf in props.items() if not asdf.get('optional', False)])
     # print(f'checking {nodekind}: {list(props.keys())}')
     for member, mvalues in desc.items():
-        reqired.discard(member)
+        required.discard(member)
         if member not in props:
             if not member.startswith('_'):
                 print(f'{member}: non-standard properties need \'_\' as a prefix!')
@@ -139,67 +133,97 @@ def check_applicable_properties(desc, nodekind, spec):
             else:
                 pass
                 # isinstance(mvalues, class_from_typedesc):
-    if reqired:
-        print('missing required properties:', reqired)
+    if required:
+        print('missing required properties:', required)
 
 
 def check_datainfo(mvalues):
     pass
 
 
-# ## Test something else
+# int-enum?
+class Severity(Enum):
+    HINT = 0
+    WARNING = 1
+    ERROR = 2
+    CATASTROPHIC = 3  # something, were we just stop?
 
 
+# TODO: make this useful
+@dataclass
 class Context:
-    pass
-    # "path"
-    #
+    path: list[str]
+    # system?
+
+
+@dataclass
+class CheckerError:
+    severity: Severity
+    checker: str  # name of the checker that produced the error
+    ctx: Context
+    msg: str
 
 
 class BaseTestChecker:
-    def visit(self, nodekind, description, path, spec, name=None):
-        pass
+    name = 'check-base'
 
-    def visit_node(self, description, path, spec):
-        pass
-
-    def visit_property(self, nodekind, description, path):
-        pass
-
-    def visit_module(self, name, description):
-        pass
-
-    def visit_accessible(self, name, description, path):
-        pass
-
-    def visit_datainfo(self, description, path):
-        pass
-
-    def finish_module(self, name):
-        pass
-
-    def finish(self):
-        pass
-
-
-# collect all properties, check if they are defined or preceded by _
-class Propchecker(BaseTestChecker):
     def __init__(self, spec):
         self.spec = spec
-        self.seen = {}
 
-    def visit_node(self, nodekind, description, path, spec, name=None):
-        # todo
-        pass
+    def visit(self, nodekind, description, context, name=None):
+        """called at every element of the description"""
 
-    def finish(self):
-        props = spec.prop_map[nodekind]
-        #print(f'checking {nodekind}: {list(props.keys())}')
-        for member, mvalues in desc.items():
-            reqired.discard(member)
+    def visit_node(self, description, context):
+        """called when visiting the root SECNode element"""
+
+    def visit_property(self, nodekind, description, context):
+        """called when visiting elements that should be a property, based on their position"""
+
+    def visit_module(self, name, description, context):
+        """called when visiting elements that should be a module, based on their position"""
+
+    def visit_accessible(self, name, description, context):
+        """called when visiting elements that should be an accessible, based on their position"""
+
+    def visit_datainfo(self, description, context):
+        """called when visiting elements that are called datainfo"""
+
+    def finish_accessible(self, description, context):
+        """called after all subelements of an accessible"""
+
+    def finish_module(self, name, context):
+        """called after all subelements of a module"""
+
+    def finish(self, context):
+        """called after all elements are processed"""
+
+    def get_errors(self):
+        """get all errors the checker found"""
+
+
+# TODO: better way
+class PropChecker(BaseTestChecker):
+    name = 'properties-basic'
+
+    def __init__(self, spec):
+        super().__init__(spec)
+        self.errors = []
+
+    def check_props_present(self, description, context, nodekind):
+        props = self.spec.prop_map[nodekind]
+        required = set(
+            [prop for prop, propspec in props.items()
+             if not propspec.get('optional', False)]
+        )
+        for member, mvalues in description.items():
+            required.discard(member)
             if member not in props:
                 if not member.startswith('_'):
-                    print(f'{member}: non-standard properties need \'_\' as a prefix!')
+                    self.errors.append(
+                        CheckerError(Severity.WARNING, self.name, context,
+                                     f'{member}: non-standard properties need \'_\' as a prefix!'
+                                     )
+                    )
                 # TODO: check custom property datainfo etc if possible
             else:
                 if props[member].get('datainfo') == 'Datainfo':
@@ -207,50 +231,122 @@ class Propchecker(BaseTestChecker):
                 else:
                     pass
                     # isinstance(mvalues, class_from_typedesc):
-        if reqired:
-            print('missing required properties:', reqired)
+        if required:
+            self.errors.append(
+                CheckerError(Severity.WARNING, self.name, context,
+                             f'missing required properties: {required}'
+                             )
+            )
+
+    def visit_node(self, description, context):
+        self.check_props_present(description, context, 'SECNode')
+
+    def visit_module(self, name, description, context):
+        self.check_props_present(description, context, 'Interface')
+
+    def visit_accessible(self, name, description, context):
+        ty = description.get('datainfo', {}).get('type', None)
+        if ty is None:
+            self.errors.append(
+                    CheckerError(Severity.ERROR, self.name, context,
+                                 f'Accessible datainfo of {name} does not have a type!')
+            )
+        elif ty == 'Command':
+            self.check_props_present(description, context, 'Command')
+        else:
+            self.check_props_present(description, context, 'Parameter')
+
+    def get_errors(self):
+        return self.errors
 
 
+class ModulenameChecker(BaseTestChecker):
+    name = 'module-name'
 
-class Modulenamechecker(BaseTestChecker):
-    def visit_module(self, name, description):
-        if not re.match(r'', name):
-            print('')
+    def __init__(self, spec):
+        super().__init__(spec)
+        self.errors = []
+
+    def visit_module(self, name, description, context):
+        if not re.match(r'^[a-zA-Z]\w{0,62}$', name):
+            self.errors.append(
+                    CheckerError(Severity.WARNING, self.name, context,
+                                 f'{name} does not match required module name format!')
+            )
+
+    def get_errors(self):
+        return self.errors
 
 
-def visitor_step_through_outer(desc, spec):
-    checkers = []
-    visitor_step_through(desc, spec, checkers)
+def errors_to_json(errors):
+    output = []
+    for checkername, errors_from_checker in errors.items():
+        output.append({
+            "checker": checkername,
+            "errors": [
+                {"severity": err.severity.name, "ctx": err.ctx.path, "msg": err.msg}
+                for err in errors_from_checker
+            ],
+        })
+    return json.dumps(output)
+
+
+def fmt_errors(errors):
+    if all(not errs for errs in errors.values()):
+        return 'No errors found'
+
+    out = ''
+    for checker, errs in errors.items():
+        if not errs:
+            continue
+        out += f'{checker}:\n'
+        for err in errs:
+            out += f'  {err.severity.name.capitalize()}: {err.msg} ({err.ctx})\n'
+    return out
+
+
+def visitor_step_through_outer(desc, spec, output_json):
+    checkers = [PropChecker, ModulenameChecker]
+    errors = {}
+    for checkercls in checkers:
+        checker = checkercls(spec)
+        if checker.name in errors:
+            raise ValueError('didnt override checker name or you want to run checker twice!')
+        visitor_step_through(desc, checker)
+        errors[checker.name] = checker.get_errors()
+    if output_json:
+        print(errors_to_json(errors))
+    else:
+        print(fmt_errors(errors))
 
 
 # TODO: missing visit_datainfo calls above accessibles
-def visitor_step_through(desc, spec, checkers):
-    for checker in checkers:
-        checker.visit_node('SECNode', desc, [])
-        for prop, propdesc in desc.items():
-            checker.visit_node('Property', desc, ['SECNode'], spec)
-            checker.visit_property('SECNode', propdesc, ['SECNode'], spec)
+# TODO: maybe too strict/make more flexible? -> e.g. go through all dicts and check datainfo by name etc.
+def visitor_step_through(desc, checker):
+    checker.visit('SECNode', desc, Context([]))
+    checker.visit_node(desc, Context([]))
+    for prop, propdesc in desc.items():
+        checker.visit('Property', desc, Context(['SECNode']))
+        checker.visit_property('SECNode', propdesc, Context(['SECNode']))
     for module, moddesc in desc.get('modules', {}).items():
-        for checker in checkers:
-            checker.visit_node('Interface', desc, ['SECNode', 'modules'])
-            checker.visit_module(module, moddesc)
+        checker.visit('Interface', desc, Context(['SECNode', 'modules']))
+        checker.visit_module(module, moddesc, Context(['SECNode', 'modules']))
         for prop, propdesc in moddesc.items():
-            for checker in checkers:
-                checker.visit_node('Property', moddesc, [])
-                checker.visit_property('Interface', propdesc, ['SECNode', 'modules', module], spec)
+            checker.visit('Property', moddesc, Context([]))
+            checker.visit_property('Interface', propdesc, Context(['SECNode', 'modules', module]))
         for accessible, accdesc in moddesc.get('accessibles', {}).items():
-            for checker in checkers:
-                checker.visit_node('Interface', accdesc, ['SECNode', 'modules', module], spec)
-                checker.visit_accessible('Interface', accdesc, ['SECNode', 'modules', module])
+            checker.visit('Interface', accdesc, Context(['SECNode', 'modules', module]))
+            checker.visit_accessible('Interface', accdesc, Context(['SECNode', 'modules', module]))
             for prop, propdesc in accdesc.items():
-                for checker in checkers:
-                    checker.visit_node('SECNode', desc, [])
-                    checker.visit_property('Interface', propdesc, ['SECNode', 'modules', module, 'accessibles', accessible], spec)
+                checker.visit('SECNode', desc, Context([]))
+                checker.visit_property('Interface', propdesc,
+                                       Context(['SECNode', 'modules', module, 'accessibles', accessible]))
             datainfo = accdesc.get('datainfo')
             if not datainfo:
                 continue
-            for checker in checkers:
-                checker.visit_datainfo(datainfo,
-                                       ['SECNode', 'modules', module, 'accessibles', accessible])
-        checker.finish_module(module)
-    checker.finish_node()
+            checker.visit_datainfo(datainfo,
+                                   Context(['SECNode', 'modules', module, 'accessibles', accessible]))
+            checker.finish_accessible(datainfo,
+                                   Context(['SECNode', 'modules', module, 'accessibles', accessible]))
+        checker.finish_module(module, Context(['SECNode']))
+    checker.finish(Context([]))
