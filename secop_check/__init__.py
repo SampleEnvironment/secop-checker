@@ -110,6 +110,10 @@ class Diagnostic:
     msg: str
 
 
+class Catastrophe(Exception):
+    pass
+
+
 @dataclass
 class Spec:
     name: str
@@ -141,7 +145,7 @@ class DiagnosticBase:
         self._diags.append(diag)
         self._print(diag)
         if severity == Severity.CATASTROPHIC:
-            raise SystemExit(1)
+            raise Catastrophe
 
     def _print(self, diag):
         if self._output_json:
@@ -412,7 +416,7 @@ class Checker(DiagnosticBase):
                     ty = 'Command' if datainfo.get('type') == 'command' \
                         else 'Parameter'
                     with self.with_context(ty, accname):
-                        checker.visit_datainfo(datainfo or None)
+                        checker.visit_datainfo(datainfo)
 
                         checker.visit(ty, accdesc)
 
@@ -475,7 +479,27 @@ class BaseTestChecker:
         """Called after all elements are processed."""
 
 
+class BasicStructureChecker(BaseTestChecker):
+    """Checks for basic structure of the descriptive data.
+
+    It should fail with CATASTROPHIC errors because further checkers probably
+    will raise a lot of KeyErrors.
+    """
+    name = 'structure'
+
+    def visit_secnode(self, description):
+        if 'modules' not in description:
+            self.checker.emit(Severity.CATASTROPHIC, 'missing modules dict')
+
+    def visit_module(self, name, description):
+        if 'accessibles' not in description:
+            self.checker.emit(Severity.CATASTROPHIC,
+                              'missing dict of module accessibles')
+
+
 class DatainfoChecker(BaseTestChecker):
+    """Checks for valid datainfos, no matter where they are defined.
+    """
     name = 'datainfo'
 
     def visit_datainfo(self, description):
@@ -484,6 +508,13 @@ class DatainfoChecker(BaseTestChecker):
         if 'type' not in description:
             self.checker.emit(Severity.ERROR, 'datainfo does not have a type')
             description['type'] = 'unknown'
+        if description['type'] == 'command':
+            if 'argument' in description:
+                with self.checker.with_context('datainfo', 'argument'):
+                    self.visit_datainfo(description['argument'])
+            if 'result' in description:
+                with self.checker.with_context('datainfo', 'result'):
+                    self.visit_datainfo(description['result'])
         # TODO more
 
 
@@ -682,5 +713,5 @@ class AccessibleChecker(BaseTestChecker):
                                   f'{should["result"]}')
 
 
-CHECKERS = [DatainfoChecker, NameChecker, InterfaceChecker,
-            BasePropsChecker, AccessibleChecker]
+CHECKERS = [BasicStructureChecker, DatainfoChecker, NameChecker,
+            InterfaceChecker, BasePropsChecker, AccessibleChecker]

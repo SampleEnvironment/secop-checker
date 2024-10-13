@@ -50,8 +50,6 @@ def parse_args(argv):
 
 args = parse_args(sys.argv[1:])
 
-checker = secop_check.Checker(args.version, args.json)
-
 if ':' in args.infile:
     if args.infile.startswith('tcp://'):
         args.infile = args.infile[6:]
@@ -74,4 +72,8 @@ else:
     with open(args.infile, encoding='utf-8') as f:
         desc = f.read()
 
-checker.check(desc)
+checker = secop_check.Checker(args.version, args.json)
+try:
+    checker.check(desc)
+except secop_check.Catastrophe:
+    sys.exit(1)
