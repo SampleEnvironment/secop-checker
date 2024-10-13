@@ -196,6 +196,10 @@ class Loader(DiagnosticBase):
         prop_map = {}
 
         with self.with_context('Version', version):
+            for ref in ver['systems']:
+                # TODO
+                pass
+
             for ref in ver['interfaces']:
                 name, iface = self._resolve('Interface', ref)
 
@@ -204,31 +208,77 @@ class Loader(DiagnosticBase):
                         iface['base'] = self._resolve('Interface', iface['base'])
                     else:
                         iface['base'] = None
-                    for (i, param) in enumerate(iface.get('parameters', [])):
-                        iface['parameters'][i] = \
-                            self._resolve('Parameter', param)
-                    for (i, param) in enumerate(iface.get('commands', [])):
-                        iface['commands'][i] = \
-                            self._resolve('Command', param)
 
-                    # TODO: can interfaces have properties?
+                    new_params = {}
+                    for param in iface.get('parameters', []):
+                        pname, param = self._resolve('Parameter', param)
+                        new_params[pname] = param
+                    iface['parameters'] = new_params
 
+                    new_cmds = {}
+                    for cmd in iface.get('commands', []):
+                        cname, cmd = self._resolve('Command', cmd)
+                        new_cmds[cname] = cmd
+                    iface['commands'] = new_cmds
+
+                    new_props = {}
+                    for prop in iface.get('properties', []):
+                        pname, prop = self._resolve('Property', prop)
+                        new_props[pname] = prop
+                    iface['properties'] = new_props
+
+                # TODO: check for duplicate interfaces
                 inv.setdefault('Interface', {})[name] = iface
 
-            for ref in ver['systems']:
-                # TODO
-                pass
-
             for ref in ver['features']:
-                # TODO
-                pass
+                name, feat = self._resolve('Feature', ref)
+
+                with self.with_context('Feature', name):
+                    new_params = {}
+                    for param in feat.get('parameters', []):
+                        pname, param = self._resolve('Parameter', param)
+                        new_params[pname] = param
+                    feat['parameters'] = new_params
+
+                    new_cmds = {}
+                    for cmd in feat.get('commands', []):
+                        cname, cmd = self._resolve('Command', cmd)
+                        new_cmds[cname] = cmd
+                    feat['commands'] = new_cmds
+
+                    new_props = {}
+                    for prop in feat.get('properties', []):
+                        pname, prop = self._resolve('Property', prop)
+                        new_props[pname] = prop
+                    feat['properties'] = new_props
+
+                # TODO: check for duplicates
+                inv.setdefault('Feature', {})[name] = feat
 
             for ref in ver['parameters']:
                 name, par = self._resolve('Parameter', ref)
+
+                with self.with_context('Parameter', name):
+                    new_props = {}
+                    for prop in par.get('properties', []):
+                        pname, prop = self._resolve('Property', prop)
+                        new_props[pname] = prop
+                    par['properties'] = new_props
+
+                # TODO: check for duplicates
                 inv.setdefault('Parameter', {})[name] = par
 
             for ref in ver['commands']:
                 name, cmd = self._resolve('Command', ref)
+
+                with self.with_context('Command', name):
+                    new_props = {}
+                    for prop in cmd.get('properties', []):
+                        pname, prop = self._resolve('Property', prop)
+                        new_props[pname] = prop
+                    cmd['properties'] = new_props
+
+                # TODO: check for duplicates
                 inv.setdefault('Command', {})[name] = cmd
 
             for (proptype, props) in ver['properties'].items():
@@ -237,8 +287,8 @@ class Loader(DiagnosticBase):
                     prop_map.setdefault(proptype, {})[name] = prop
 
         return Spec(version, ver['version'], ver['description'], {
-            'interfaces': ver['interfaces'],
             'systems': ver['systems'],
+            'interfaces': ver['interfaces'],
             'features': ver['features'],
             'parameters': ver['parameters'],
             'commands': ver['commands'],
@@ -262,14 +312,15 @@ class Checker(DiagnosticBase):
         except json.JSONDecodeError as e:
             self.emit(Severity.CATASTROPHIC, f'invalid json at line {e.lineno}'
                       f' column {e.colno}:\n{e.msg}')
+
+        # TODO: add mechanism to add additional yaml repos from desc here
+
         self.visit_descriptive_data(desc)
 
     def visit_descriptive_data(self, desc):
         for checkercls in CHECKERS:
             self.visit_with_checker(desc, checkercls(self))
 
-    # TODO: missing visit_datainfo calls above accessibles
-    # TODO: maybe too strict/make more flexible? -> e.g. go through all dicts and check datainfo by name etc.
     def visit_with_checker(self, desc, checker):
         with self.with_context('SECNode', ''):
             checker.visit('SECNode', desc)
@@ -300,10 +351,14 @@ class Checker(DiagnosticBase):
                         datainfo = accdesc.get('datainfo', {})
                         ty = 'Command' if datainfo.get('type') == 'command' \
                             else 'Parameter'
-                        checker.visit_datainfo(datainfo or None)  # TODO
+                        checker.visit_datainfo(datainfo or None)
 
                         checker.visit(ty, accdesc)
-                        checker.visit_accessible(accname, accdesc)
+
+                        if ty == 'Command':
+                            checker.visit_command(accname, accdesc)
+                        else:
+                            checker.visit_parameter(accname, accdesc)
 
                         for prop, propdesc in accdesc.items():
                             with self.with_context('Property', prop):
@@ -340,7 +395,10 @@ class BaseTestChecker:
     def visit_module(self, name, description):
         """Visiting each module of a SECnode."""
 
-    def visit_accessible(self, name, description):
+    def visit_parameter(self, name, description):
+        """Visiting each accessible of a module."""
+
+    def visit_command(self, name, description):
         """Visiting each accessible of a module."""
 
     def visit_datainfo(self, description):
@@ -378,7 +436,68 @@ class ModulenameChecker(BaseTestChecker):
             )
 
 
-class PropChecker(BaseTestChecker):
+class InterfaceChecker(BaseTestChecker):
+    name = 'interface'
+
+    def visit_module(self, name, description):
+        for iface in description.get('interface_classes', []):
+            if iface.startswith('_'):  # TODO custom classes are allowed?
+                continue
+
+            if iface not in self.spec.inventory['Interface']:
+                self.checker.emit(Severity.ERROR,
+                                  f'declares unknown interface class {iface}')
+                return
+
+            ifacedesc = self.spec.inventory['Interface'][iface]
+            for cmd, cmddesc in ifacedesc['commands'].items():
+                if cmddesc.get('optional', False):
+                    continue
+                if cmd not in description['accessibles']:
+                    self.checker.emit(
+                        Severity.ERROR,
+                        f'missing command {cmd} from interface {iface}'
+                    )
+
+            for par, pardesc in ifacedesc['parameters'].items():
+                if pardesc.get('optional', False):
+                    continue
+                if par not in description['accessibles']:
+                    self.checker.emit(
+                        Severity.ERROR,
+                        f'missing parameter {par} from interface {iface}'
+                    )
+
+        for feat in description.get('features', []):
+            if feat.startswith('_'):  # TODO custom classes are allowed?
+                continue
+
+            if feat not in self.spec.inventory['Feature']:
+                self.checker.emit(Severity.ERROR,
+                                  f'declares unknown feature {feat}')
+                return
+
+            featdesc = self.spec.inventory['Feature'][feat]
+            for cmd, cmddesc in featdesc['commands'].items():
+                if cmddesc.get('optional', False):
+                    continue
+                if cmd not in description['accessibles']:
+                    self.checker.emit(
+                        Severity.ERROR,
+                        f'missing command {cmd} from feature {feat}'
+                    )
+
+            for par, pardesc in featdesc['parameters'].items():
+                if pardesc.get('optional', False):
+                    continue
+                if par not in description['accessibles']:
+                    self.checker.emit(
+                        Severity.ERROR,
+                        f'missing parameter {par} from feature {feat}'
+                    )
+
+
+class BasePropsChecker(BaseTestChecker):
     name = 'properties-basic'
 
     def check_props_present(self, description, props, skip=None):
@@ -410,18 +529,27 @@ class PropChecker(BaseTestChecker):
 
     def visit_module(self, name, description):
         all_props = self.spec.prop_map['Module'].copy()
-        # TODO more from interfaces, systems, features
+        for iface in description.get('interface_classes', []):
+            all_props.update(self.spec.inventory['Interface'][iface]['properties'])
+        for feat in description.get('features', []):
+            all_props.update(self.spec.inventory['Feature'][feat]['properties'])
+        # TODO add more from systems
         self.check_props_present(description, all_props, 'accessibles')
-
-    def visit_command(self, name, description):
-        all_props = self.spec.prop_map['Command'].copy()
-        # TODO more interfaces, systems, features
-        self.check_props_present(description, all_props)
 
     def visit_parameter(self, name, description):
         all_props = self.spec.prop_map['Parameter'].copy()
+        if name in self.spec.inventory['Parameter']:
+            all_props.update(self.spec.inventory['Parameter'][name]['properties'])
+        # TODO more interfaces, systems, features
+        self.check_props_present(description, all_props)
+
+    def visit_command(self, name, description):
+        all_props = self.spec.prop_map['Command'].copy()
+        if name in self.spec.inventory['Command']:
+            all_props.update(self.spec.inventory['Command'][name]['properties'])
         # TODO more interfaces, systems, features
         self.check_props_present(description, all_props)
 
 
-CHECKERS = [DatainfoChecker, ModulenameChecker, PropChecker]
+CHECKERS = [DatainfoChecker, ModulenameChecker, InterfaceChecker,
+            BasePropsChecker]
