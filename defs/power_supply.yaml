@@ -52,7 +52,7 @@ modules:
       optional: true
       parameters:
         value:
-          datainfo: numeric, has unit Ohms.
+          datainfo: numeric, has unit Ohms
       properties:
         quantity:
           definition: quantity:1

@@ -6,10 +6,7 @@ description: |
   the hardware.
 commands:
   - communicate:
-      kind: Command
-      name: communicate
-      version: 1
-      arguments: none
-      return: none
+      argument: none
+      result: none
       description: |
         Communicate with the hardware directly.

@@ -27,6 +27,8 @@ parameters:
   - control_active:1
 commands:
   - go:1
+  - stop:1
+  - hold:1
   - shutdown:1
   - reset:1
   - clear_errors:1

@@ -31,18 +31,6 @@ from pathlib import Path
 
 import yaml
 
-# TODO:
-# - version resolution
-# - strategy?
-#   - checker which each goes through
-#   - checker once through tree with callbacks (checker.check_datainfo)
-#   - just static coding?
-# - define datatypes
-# - how to propagate errors?
-#   - stop at first error, continue on warning
-#   - try best effort to continue? -> effort for all following checkers
-
-
 REQUIRED_INFO = {'kind', 'name', 'version', 'description'}
 ALLOWED_KINDS = {'Version', 'Interface', 'Command', 'Parameter', 'Property',
                  'Datatype', 'System', 'Feature'}
@@ -50,10 +38,14 @@ ALLOWED_KINDS = {'Version', 'Interface', 'Command', 'Parameter', 'Property',
 
 # int-enum?
 class Severity(Enum):
+    # not a violation, but might be interesting
     HINT = 0
+    # something that only violates semantics
     WARNING = 1
+    # something that violates non-semantic requirements of the spec
     ERROR = 2
-    CATASTROPHIC = 3  # something, were we just stop?
+    # something that makes the checking stop directly
+    CATASTROPHIC = 3
 
 
 @dataclass
@@ -112,11 +104,12 @@ class DiagnosticBase:
                 'ctx': diag.ctx.path,
             }))
         else:
-            ctx = ' -> '.join(f'{ty} {name}'.strip()
-                              for ty, name in diag.ctx.path).strip()
+            step = f' [{diag.step}]' if diag.step else ''
+            ctx = ' / '.join(f'{ty} {name}'.strip()
+                             for ty, name in diag.ctx.path).strip()
             if ctx:
                 ctx += ': '
-            print(f'{diag.severity.name}: {ctx}{diag.msg}')
+            print(f'{diag.severity.name}{step}: {ctx}{diag.msg}')
 
 
 class Loader(DiagnosticBase):
@@ -150,19 +143,16 @@ class Loader(DiagnosticBase):
             name, props = reference.popitem()
             if reference:
                 reference[name] = props
-                self.emit(Severity.CATASTROPHIC,
+                self.emit(Severity.ERROR,
                           f'invalid reference {reference}, needs to be a '
                           '1-element dictionary')
             if 'definition' not in props:
                 # TODO allow this or not?
-                for req in REQUIRED_INFO:
-                    if req not in props:
-                        self.emit(Severity.CATASTROPHIC, 'found spec item '
-                                  f'without required `{req}`: {props!r}')
-                if props['kind'] != kind:
-                    self.emit(Severity.CATASTROPHIC, f'invalid item {props}, '
-                              f'kind mismatch {kind} vs {props["kind"]}')
-                return props['name'], props
+                if 'description' not in props:
+                    self.emit(Severity.ERROR, 'spec item must have a '
+                              'description')
+                    props['description'] = ''
+                return name, props
             base = deepcopy(self._resolve(kind, props.pop('definition'))[1])
             base.update(props)
             return name, base
@@ -174,7 +164,8 @@ class Loader(DiagnosticBase):
         try:
             version = int(version)
         except ValueError:
-            self.emit(Severity.CATASTROPHIC, f'invalid version {version}')
+            self.emit(Severity.ERROR, f'invalid version {version}')
+            version = 0
         try:
             return name, self._all_objects[kind][name, version]
         except KeyError:
@@ -319,6 +310,7 @@ class Checker(DiagnosticBase):
 
     def visit_descriptive_data(self, desc):
         for checkercls in CHECKERS:
+            self._step = checkercls.name
             self.visit_with_checker(desc, checkercls(self))
 
     def visit_with_checker(self, desc, checker):
@@ -347,10 +339,10 @@ class Checker(DiagnosticBase):
         for prop, propdesc in moddesc.items():
             if prop == 'accessibles':
                 for accname, accdesc in propdesc.items():
-                    with self.with_context('Accessible', accname):
-                        datainfo = accdesc.get('datainfo', {})
-                        ty = 'Command' if datainfo.get('type') == 'command' \
-                            else 'Parameter'
+                    datainfo = accdesc.get('datainfo', {})
+                    ty = 'Command' if datainfo.get('type') == 'command' \
+                        else 'Parameter'
+                    with self.with_context(ty, accname):
                         checker.visit_datainfo(datainfo or None)
 
                         checker.visit(ty, accdesc)
@@ -425,15 +417,31 @@ class DatainfoChecker(BaseTestChecker):
         # TODO more
 
 
-class ModulenameChecker(BaseTestChecker):
-    name = 'module-name'
+class NameChecker(BaseTestChecker):
+    name = 'names'
+
+    _mod = re.compile(r'^[a-zA-Z]\w{0,62}$')
+    _ident = re.compile(r'^[_a-zA-Z]\w{0,62}$')
 
     def visit_module(self, name, description):
-        if not re.match(r'^[a-zA-Z]\w{0,62}$', name):
-            self.checker.emit(
-                Severity.WARNING,
-                f'{name} does not match required module name format'
-            )
+        if not self._mod.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required module name format')
+
+    def visit_parameter(self, name, description):
+        if not self._ident.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required parameter name format')
+
+    def visit_command(self, name, description):
+        if not self._ident.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required command name format')
+
+    def visit_property(self, nodekind, name, description):
+        if not self._ident.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required property name format')
 
 
 class InterfaceChecker(BaseTestChecker):
@@ -518,7 +526,7 @@ class BasePropsChecker(BaseTestChecker):
                 # TODO: check custom property datainfo etc if possible
         if required:
             self.checker.emit(
-                Severity.WARNING,
+                Severity.ERROR,
                 f'missing required properties: {required}'
             )
 
@@ -551,5 +559,58 @@ class BasePropsChecker(BaseTestChecker):
         self.check_props_present(description, all_props)
 
 
-CHECKERS = [DatainfoChecker, ModulenameChecker, InterfaceChecker,
-            BasePropsChecker]
+class AccessibleChecker(BaseTestChecker):
+    name = 'accessibles'
+
+    def check_datainfo(self, description, should):
+        pass  # TODO nothing we can do so far
+
+    def visit_parameter(self, name, description):
+        should = self.spec.inventory['Parameter'].get(name)
+        if should is None:
+            # TODO: could be from a System
+            return
+        if description['readonly'] != should['readonly']:
+            if should['readonly']:
+                self.checker.emit(Severity.WARNING,
+                                  'parameter should be readonly')
+            else:
+                self.checker.emit(Severity.WARNING,
+                                  'parameter should not be readonly')
+        self.check_datainfo(description['datainfo'], should['datainfo'])
+
+    def visit_command(self, name, description):
+        should = self.spec.inventory['Command'].get(name)
+        if should is None:
+            # TODO: could be from a System
+            return
+
+        if 'argument' in description['datainfo']:
+            if should['argument'] == 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should not have an argument')
+            else:
+                self.check_datainfo(description['datainfo']['argument'],
+                                    should['argument'])
+        else:
+            if should['argument'] != 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should have an argument: '
+                                  f'{should["argument"]}')
+
+        if 'result' in description['datainfo']:
+            if should['result'] == 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should not have an result')
+            else:
+                self.check_datainfo(description['datainfo']['result'],
+                                    should['result'])
+        else:
+            if should['result'] != 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should have an result: '
+                                  f'{should["result"]}')
+
+
+CHECKERS = [DatainfoChecker, NameChecker, InterfaceChecker,
+            BasePropsChecker, AccessibleChecker]
