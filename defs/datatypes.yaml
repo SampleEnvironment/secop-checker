@@ -1,16 +1,4 @@
 ---
-kind: Datainfo
-name: datainfo
-version: 1
-description: |
-  base datatype
-members:
-  type:
-    designates:
-      int
-      string
-
----
 kind: Datatype
 name: int
 version: 1

@@ -1,13 +1,35 @@
+# *****************************************************************************
+# Copyright (c) 2024-2024 by the authors, see LICENSE
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# Module authors:
+#   Alexander Zaft <a.zaft@fz-juelich.de>
+#   Georg Brandl <g.brandl@fz-juelich.de>
+#
+# *****************************************************************************
+
 import json
 import re
-import sys
-from collections import namedtuple
+from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 import yaml
-
 
 # TODO:
 # - version resolution
@@ -21,124 +43,9 @@ import yaml
 #   - try best effort to continue? -> effort for all following checkers
 
 
-class Version(str, Enum):
-    LATEST = 'latest'
-    V1_0 = '1.0'
-    V1_1 = '1.1'
-
-
-Spec = namedtuple('Spec', 'all, properties, prop_map')
-
-
-def load_and_mangle(version):
-    path = Path(__file__).parents[1] / 'defs'
-    all_specs = []
-    for doc in path.glob('*.yaml'):
-        with doc.open('r') as f:
-            all_specs.extend(yaml.safe_load_all(f))
-    specs = {}
-    props = {}
-    props_for_thing = {}
-    for spec in all_specs:
-        if not set(['kind', 'name', 'version', 'description']) <= set(spec.keys()):
-            print(spec)
-            raise ValueError('InternalError')
-        kind = spec['kind']
-        if kind == 'Property':
-            props[spec['name']] = spec
-            for thing in spec['applies_to']:
-                if thing not in props_for_thing:
-                    props_for_thing[thing] = {}
-                props_for_thing[thing][spec['name']] = spec
-    # print(props.keys())
-    # for k, v in props_for_thing.items():
-    #     print(k)
-    #     for x, y in v.items():
-    #         print("\t", x)
-
-    return Spec(specs, props, props_for_thing)
-
-
-def check(path, version=Version.LATEST, output_json=False):
-    if path == '-':
-        checks(sys.stdin.read(), version, output_json=output_json)
-    if isinstance(path, str):
-        path = Path(path)
-    with path.open('r', encoding='utf-8') as f:
-        checks(f.read(), version, output_json=output_json)
-
-
-def check_part(node, nodekind, context, spec):
-    # check that node is an object!
-    props = spec.prop_map[nodekind]
-    required = set([prop for prop, asdf in props.items() if not asdf.get('optional', False)])
-    for member, mvalues in node.items():
-        required.discard(member)
-        if member not in props:
-            # check custom property
-            if not member.startswith('_'):
-                print(f'{member}: non-standard properties need \'_\' as a prefix!')
-        if member == 'modules':
-            for mod, moddesc in mvalues.items():
-                check_part(moddesc, 'Interface', {'name': mod}, spec)
-    if required:
-        print('missing required properties:', required)
-
-
-def checks(description, version=Version.LATEST, output_json=False):
-    """check string"""
-    try:
-        desc = json.loads(description)
-    except json.JSONDecodeError as e:
-        print(e.msg, e.pos, e.lineno, e.colno)
-        raise ValueError("invalid json") from e
-    spec = load_and_mangle(version)
-    # check_part(desc, 'SECNode', {}, spec)
-    # step_through(desc, spec)
-    visitor_step_through_outer(desc, spec, output_json)
-
-
-def step_through(desc, spec):
-    check_applicable_properties(desc, 'SECNode', spec)
-    for module, moddesc in desc.get('modules', {}).items():
-        check_applicable_properties(moddesc, 'Interface', spec)
-        for accessible, accdesc in moddesc.get('accessibles', {}).items():
-            ty = accdesc.get('datainfo').get('type')
-            if ty is None:
-                print("err TODO")
-            elif ty == 'Command':
-                check_applicable_properties(accdesc, 'Command', spec)
-            else:
-                check_applicable_properties(accdesc, 'Parameter', spec)
-    # check each module
-    #   # check each prop
-    #   # check each accessible
-    #   #   # check each prop
-    #    #   #   # (opt) check each datainfo
-
-
-def check_applicable_properties(desc, nodekind, spec):
-    props = spec.prop_map[nodekind]
-    required = set([prop for prop, asdf in props.items() if not asdf.get('optional', False)])
-    # print(f'checking {nodekind}: {list(props.keys())}')
-    for member, mvalues in desc.items():
-        required.discard(member)
-        if member not in props:
-            if not member.startswith('_'):
-                print(f'{member}: non-standard properties need \'_\' as a prefix!')
-            # TODO: check custom property datainfo etc if possible
-        else:
-            if props[member].get('datainfo') == 'Datainfo':
-                check_datainfo(mvalues)
-            else:
-                pass
-                # isinstance(mvalues, class_from_typedesc):
-    if required:
-        print('missing required properties:', required)
-
-
-def check_datainfo(mvalues):
-    pass
+REQUIRED_INFO = {'kind', 'name', 'version', 'description'}
+ALLOWED_KINDS = {'Version', 'Interface', 'Command', 'Parameter', 'Property',
+                 'Datatype', 'System', 'Feature'}
 
 
 # int-enum?
@@ -149,204 +56,372 @@ class Severity(Enum):
     CATASTROPHIC = 3  # something, were we just stop?
 
 
-# TODO: make this useful
 @dataclass
 class Context:
-    path: list[str]
+    path: list[tuple[str, str]]
     # system?
 
 
 @dataclass
-class CheckerError:
+class Diagnostic:
     severity: Severity
-    checker: str  # name of the checker that produced the error
+    step: str
     ctx: Context
     msg: str
+
+
+@dataclass
+class Spec:
+    name: str
+    version: int
+    description: str
+    # Member lists of the given version
+    members: dict
+    # Properties by kind
+    prop_map: dict
+    # All other objects, by kind
+    inventory: dict
+
+
+class DiagnosticBase:
+    def __init__(self, output_json=False):
+        self._output_json = output_json
+        self._diags = []
+        self._step = ''
+        self._context = Context(path=[])
+
+    @contextmanager
+    def with_context(self, kind, name):
+        self._context.path.append((kind, name))
+        yield
+        self._context.path.pop()
+
+    def emit(self, severity, msg):
+        diag = Diagnostic(severity, self._step, self._context, msg)
+        self._diags.append(diag)
+        self._print(diag)
+        if severity == Severity.CATASTROPHIC:
+            raise SystemExit(1)
+
+    def _print(self, diag):
+        if self._output_json:
+            print(json.dumps({
+                'severity': diag.severity.name,
+                'step': diag.step,
+                'msg': diag.msg,
+                'ctx': diag.ctx.path,
+            }))
+        else:
+            ctx = ' -> '.join(f'{ty} {name}'.strip()
+                              for ty, name in diag.ctx.path).strip()
+            if ctx:
+                ctx += ': '
+            print(f'{diag.severity.name}: {ctx}{diag.msg}')
+
+
+class Loader(DiagnosticBase):
+    def __init__(self, root, output_json=False):
+        super().__init__(output_json)
+        self._root = root
+        self._all_objects = {}
+
+    def _load_one(self, filename):
+        with filename.open() as f:
+            data = list(yaml.safe_load_all(f))
+        with self.with_context('File', filename):
+            for spec in data:
+                for req in REQUIRED_INFO:
+                    if req not in spec:
+                        self.emit(Severity.ERROR, 'found spec item without '
+                                  f'required `{req}`: {spec!r}')
+                spec['description'] = spec['description'].strip()
+                kind = spec['kind']
+                if kind not in ALLOWED_KINDS:
+                    self.emit(Severity.ERROR, f'unknown kind {kind} '
+                              f'in {spec!r}')
+                key = spec['name'], spec['version']
+                if key in self._all_objects.setdefault(kind, {}):
+                    self.emit(Severity.ERROR, 'duplicate spec for '
+                              f'{kind} {key}')
+                self._all_objects[kind][key] = spec
+
+    def _resolve(self, kind, reference):
+        if isinstance(reference, dict):
+            name, props = reference.popitem()
+            if reference:
+                reference[name] = props
+                self.emit(Severity.CATASTROPHIC,
+                          f'invalid reference {reference}, needs to be a '
+                          '1-element dictionary')
+            if 'definition' not in props:
+                # TODO allow this or not?
+                for req in REQUIRED_INFO:
+                    if req not in props:
+                        self.emit(Severity.CATASTROPHIC, 'found spec item '
+                                  f'without required `{req}`: {props!r}')
+                if props['kind'] != kind:
+                    self.emit(Severity.CATASTROPHIC, f'invalid item {props}, '
+                              f'kind mismatch {kind} vs {props["kind"]}')
+                return props['name'], props
+            base = deepcopy(self._resolve(kind, props.pop('definition'))[1])
+            base.update(props)
+            return name, base
+
+        # TODO: implement references to other inventories
+        if ':' not in reference:
+            self.emit(Severity.CATASTROPHIC, f'invalid reference {reference}')
+        name, version = reference.split(':')
+        try:
+            version = int(version)
+        except ValueError:
+            self.emit(Severity.CATASTROPHIC, f'invalid version {version}')
+        try:
+            return name, self._all_objects[kind][name, version]
+        except KeyError:
+            self.emit(Severity.CATASTROPHIC, f'could not resolve {kind} '
+                      f'reference {name}:{version}')
+
+    def load(self, version):
+        # resolve by version
+        if not (self._root / f'version-{version}.yaml').exists():
+            self.emit(Severity.CATASTROPHIC, 'no root yaml found for '
+                      f'version {version}')
+
+        for doc in self._root.glob('*.yaml'):
+            self._load_one(doc)
+
+        # build up objects from version inventory
+        ver = self._all_objects['Version'][(version, 1)]  # TODO: other revs?
+        inv = {}
+        prop_map = {}
+
+        with self.with_context('Version', version):
+            for ref in ver['interfaces']:
+                name, iface = self._resolve('Interface', ref)
+
+                with self.with_context('Interface', name):
+                    if 'base' in iface:
+                        iface['base'] = self._resolve('Interface', iface['base'])
+                    else:
+                        iface['base'] = None
+                    for (i, param) in enumerate(iface.get('parameters', [])):
+                        iface['parameters'][i] = \
+                            self._resolve('Parameter', param)
+                    for (i, param) in enumerate(iface.get('commands', [])):
+                        iface['commands'][i] = \
+                            self._resolve('Command', param)
+
+                    # TODO: can interfaces have properties?
+
+                inv.setdefault('Interface', {})[name] = iface
+
+            for ref in ver['systems']:
+                # TODO
+                pass
+
+            for ref in ver['features']:
+                # TODO
+                pass
+
+            for ref in ver['parameters']:
+                name, par = self._resolve('Parameter', ref)
+                inv.setdefault('Parameter', {})[name] = par
+
+            for ref in ver['commands']:
+                name, cmd = self._resolve('Command', ref)
+                inv.setdefault('Command', {})[name] = cmd
+
+            for (proptype, props) in ver['properties'].items():
+                for ref in props:
+                    name, prop = self._resolve('Property', ref)
+                    prop_map.setdefault(proptype, {})[name] = prop
+
+        return Spec(version, ver['version'], ver['description'], {
+            'interfaces': ver['interfaces'],
+            'systems': ver['systems'],
+            'features': ver['features'],
+            'parameters': ver['parameters'],
+            'commands': ver['commands'],
+            'properties': ver['properties'],
+        }, prop_map, inv)
+
+
+class Checker(DiagnosticBase):
+    def __init__(self, version='latest', output_json=False):
+        super().__init__(output_json)
+
+        loader = Loader(Path(__file__).parents[1] / 'defs')
+        self._spec = loader.load(version)
+        if loader._diags:
+            self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
+                      'validate against, exiting')
+
+    def check(self, desc: str):
+        try:
+            desc = json.loads(desc)
+        except json.JSONDecodeError as e:
+            self.emit(Severity.CATASTROPHIC, f'invalid json at line {e.lineno}'
+                      f' column {e.colno}:\n{e.msg}')
+        self.visit_descriptive_data(desc)
+
+    def visit_descriptive_data(self, desc):
+        for checkercls in CHECKERS:
+            self.visit_with_checker(desc, checkercls(self))
+
+    # TODO: missing visit_datainfo calls above accessibles
+    # TODO: maybe too strict/make more flexible? -> e.g. go through all dicts and check datainfo by name etc.
+    def visit_with_checker(self, desc, checker):
+        with self.with_context('SECNode', ''):
+            checker.visit('SECNode', desc)
+            checker.visit_secnode(desc)
+
+            for prop, propdesc in desc.items():
+                if prop == 'modules':
+                    for module, moddesc in propdesc.items():
+                        with self.with_context('Module', module):
+                            self._visit_module(module, moddesc, checker)
+
+                # other node properties
+                else:
+                    with self.with_context('Property', prop):
+                        checker.visit('Property', propdesc)
+                        checker.visit_property('SECNode', prop, propdesc)
+
+            checker.finish()
+
+    def _visit_module(self, module, moddesc, checker):
+        checker.visit('Module', moddesc)
+        checker.visit_module(module, moddesc)
+
+        for prop, propdesc in moddesc.items():
+            if prop == 'accessibles':
+                for accname, accdesc in propdesc.items():
+                    with self.with_context('Accessible', accname):
+                        datainfo = accdesc.get('datainfo', {})
+                        ty = 'Command' if datainfo.get('type') == 'command' \
+                            else 'Parameter'
+                        checker.visit_datainfo(datainfo or None)  # TODO
+
+                        checker.visit(ty, accdesc)
+                        checker.visit_accessible(accname, accdesc)
+
+                        for prop, propdesc in accdesc.items():
+                            with self.with_context('Property', prop):
+                                checker.visit('Property', propdesc)
+                                checker.visit_property(ty, prop, propdesc)
+
+                        checker.finish_accessible(accdesc)
+
+            # other module properties
+            else:
+                with self.with_context('Property', prop):
+                    checker.visit('Property', propdesc)
+                    checker.visit_property('Module', prop, propdesc)
+
+            checker.finish_module(module)
 
 
 class BaseTestChecker:
     name = 'check-base'
 
-    def __init__(self, spec):
-        self.spec = spec
+    def __init__(self, checker):
+        self.checker = checker
+        self.spec = checker._spec
 
-    def visit(self, nodekind, description, context, name=None):
-        """called at every element of the description"""
+    def visit(self, nodekind, description, name=None):
+        """Called at every element of the description."""
 
-    def visit_node(self, description, context):
-        """called when visiting the root SECNode element"""
+    def visit_property(self, nodekind, name, description):
+        """Visiting properties of any node."""
 
-    def visit_property(self, nodekind, description, context):
-        """called when visiting elements that should be a property, based on their position"""
+    def visit_secnode(self, description):
+        """Visiting the root SECNode element."""
 
-    def visit_module(self, name, description, context):
-        """called when visiting elements that should be a module, based on their position"""
+    def visit_module(self, name, description):
+        """Visiting each module of a SECnode."""
 
-    def visit_accessible(self, name, description, context):
-        """called when visiting elements that should be an accessible, based on their position"""
+    def visit_accessible(self, name, description):
+        """Visiting each accessible of a module."""
 
-    def visit_datainfo(self, description, context):
-        """called when visiting elements that are called datainfo"""
+    def visit_datainfo(self, description):
+        """Visiting datainfo entries of accessibles."""
 
-    def finish_accessible(self, description, context):
-        """called after all subelements of an accessible"""
+    def finish_accessible(self, description):
+        """Called after all subelements of an accessible."""
 
-    def finish_module(self, name, context):
-        """called after all subelements of a module"""
+    def finish_module(self, name):
+        """Called after all subelements of a module."""
 
-    def finish(self, context):
-        """called after all elements are processed"""
-
-    def get_errors(self):
-        """get all errors the checker found"""
+    def finish(self):
+        """Called after all elements are processed."""
 
 
-# TODO: better way
-class PropChecker(BaseTestChecker):
-    name = 'properties-basic'
+class DatainfoChecker(BaseTestChecker):
+    name = 'datainfo'
 
-    def __init__(self, spec):
-        super().__init__(spec)
-        self.errors = []
-
-    def check_props_present(self, description, context, nodekind):
-        props = self.spec.prop_map[nodekind]
-        required = set(
-            [prop for prop, propspec in props.items()
-             if not propspec.get('optional', False)]
-        )
-        for member, mvalues in description.items():
-            required.discard(member)
-            if member not in props:
-                if not member.startswith('_'):
-                    self.errors.append(
-                        CheckerError(Severity.WARNING, self.name, context,
-                                     f'{member}: non-standard properties need \'_\' as a prefix!'
-                                     )
-                    )
-                # TODO: check custom property datainfo etc if possible
-            else:
-                if props[member].get('datainfo') == 'Datainfo':
-                    check_datainfo(mvalues)
-                else:
-                    pass
-                    # isinstance(mvalues, class_from_typedesc):
-        if required:
-            self.errors.append(
-                CheckerError(Severity.WARNING, self.name, context,
-                             f'missing required properties: {required}'
-                             )
-            )
-
-    def visit_node(self, description, context):
-        self.check_props_present(description, context, 'SECNode')
-
-    def visit_module(self, name, description, context):
-        self.check_props_present(description, context, 'Interface')
-
-    def visit_accessible(self, name, description, context):
-        ty = description.get('datainfo', {}).get('type', None)
-        if ty is None:
-            self.errors.append(
-                    CheckerError(Severity.ERROR, self.name, context,
-                                 f'Accessible datainfo of {name} does not have a type!')
-            )
-        elif ty == 'Command':
-            self.check_props_present(description, context, 'Command')
-        else:
-            self.check_props_present(description, context, 'Parameter')
-
-    def get_errors(self):
-        return self.errors
+    def visit_datainfo(self, description):
+        if not description:
+            self.checker.emit(Severity.ERROR, 'datainfo is empty')
+        if 'type' not in description:
+            self.checker.emit(Severity.ERROR, 'datainfo does not have a type')
+        # TODO more
 
 
 class ModulenameChecker(BaseTestChecker):
     name = 'module-name'
 
-    def __init__(self, spec):
-        super().__init__(spec)
-        self.errors = []
-
-    def visit_module(self, name, description, context):
+    def visit_module(self, name, description):
         if not re.match(r'^[a-zA-Z]\w{0,62}$', name):
-            self.errors.append(
-                    CheckerError(Severity.WARNING, self.name, context,
-                                 f'{name} does not match required module name format!')
+            self.checker.emit(
+                Severity.WARNING,
+                f'{name} does not match required module name format'
             )
 
-    def get_errors(self):
-        return self.errors
 
+class PropChecker(BaseTestChecker):
+    name = 'properties-basic'
 
-def errors_to_json(errors):
-    output = []
-    for checkername, errors_from_checker in errors.items():
-        output.append({
-            "checker": checkername,
-            "errors": [
-                {"severity": err.severity.name, "ctx": err.ctx.path, "msg": err.msg}
-                for err in errors_from_checker
-            ],
-        })
-    return json.dumps(output)
-
-
-def fmt_errors(errors):
-    if all(not errs for errs in errors.values()):
-        return 'No errors found'
-
-    out = ''
-    for checker, errs in errors.items():
-        if not errs:
-            continue
-        out += f'{checker}:\n'
-        for err in errs:
-            out += f'  {err.severity.name.capitalize()}: {err.msg} ({err.ctx})\n'
-    return out
-
-
-def visitor_step_through_outer(desc, spec, output_json):
-    checkers = [PropChecker, ModulenameChecker]
-    errors = {}
-    for checkercls in checkers:
-        checker = checkercls(spec)
-        if checker.name in errors:
-            raise ValueError('didnt override checker name or you want to run checker twice!')
-        visitor_step_through(desc, checker)
-        errors[checker.name] = checker.get_errors()
-    if output_json:
-        print(errors_to_json(errors))
-    else:
-        print(fmt_errors(errors))
-
-
-# TODO: missing visit_datainfo calls above accessibles
-# TODO: maybe too strict/make more flexible? -> e.g. go through all dicts and check datainfo by name etc.
-def visitor_step_through(desc, checker):
-    checker.visit('SECNode', desc, Context([]))
-    checker.visit_node(desc, Context([]))
-    for prop, propdesc in desc.items():
-        checker.visit('Property', desc, Context(['SECNode']))
-        checker.visit_property('SECNode', propdesc, Context(['SECNode']))
-    for module, moddesc in desc.get('modules', {}).items():
-        checker.visit('Interface', desc, Context(['SECNode', 'modules']))
-        checker.visit_module(module, moddesc, Context(['SECNode', 'modules']))
-        for prop, propdesc in moddesc.items():
-            checker.visit('Property', moddesc, Context([]))
-            checker.visit_property('Interface', propdesc, Context(['SECNode', 'modules', module]))
-        for accessible, accdesc in moddesc.get('accessibles', {}).items():
-            checker.visit('Interface', accdesc, Context(['SECNode', 'modules', module]))
-            checker.visit_accessible('Interface', accdesc, Context(['SECNode', 'modules', module]))
-            for prop, propdesc in accdesc.items():
-                checker.visit('SECNode', desc, Context([]))
-                checker.visit_property('Interface', propdesc,
-                                       Context(['SECNode', 'modules', module, 'accessibles', accessible]))
-            datainfo = accdesc.get('datainfo')
-            if not datainfo:
+    def check_props_present(self, description, props, skip=None):
+        required = set(
+            [prop for prop, propspec in props.items()
+             if not propspec.get('optional', False)]
+        )
+        for member, mvalues in description.items():
+            if member == skip:
                 continue
-            checker.visit_datainfo(datainfo,
-                                   Context(['SECNode', 'modules', module, 'accessibles', accessible]))
-            checker.finish_accessible(datainfo,
-                                   Context(['SECNode', 'modules', module, 'accessibles', accessible]))
-        checker.finish_module(module, Context(['SECNode']))
-    checker.finish(Context([]))
+            required.discard(member)
+            if member not in props:
+                if not member.startswith('_'):
+                    self.checker.emit(
+                        Severity.WARNING,
+                        f'{member}: non-standard properties need \'_\' as a prefix'
+                    )
+                # TODO: check custom property datainfo etc if possible
+        if required:
+            self.checker.emit(
+                Severity.WARNING,
+                f'missing required properties: {required}'
+            )
+
+    def visit_secnode(self, description):
+        self.check_props_present(description,
+                                 self.spec.prop_map['SECNode'],
+                                 'modules')
+
+    def visit_module(self, name, description):
+        all_props = self.spec.prop_map['Module'].copy()
+        # TODO more from interfaces, systems, features
+        self.check_props_present(description, all_props, 'accessibles')
+
+    def visit_command(self, name, description):
+        all_props = self.spec.prop_map['Command'].copy()
+        # TODO more interfaces, systems, features
+        self.check_props_present(description, all_props)
+
+    def visit_parameter(self, name, description):
+        all_props = self.spec.prop_map['Parameter'].copy()
+        # TODO more interfaces, systems, features
+        self.check_props_present(description, all_props)
+
+
+CHECKERS = [DatainfoChecker, ModulenameChecker, PropChecker]
