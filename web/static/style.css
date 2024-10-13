@@ -1,0 +1,40 @@
+div.wrapper {
+  width: 50%;
+  margin: auto;
+}
+
+.maininput {
+  width: 100%;
+  resize: vertical;
+}
+
+.submitBtn {
+  border-radius: 4px;
+}
+
+.errors-div {
+  padding-top: 5px;
+}
+
+.diag {
+  width: 100%;
+  padding: 5px;
+
+}
+
+.diag-hint {
+
+}
+
+.diag-warning {
+  color: darkorange;
+}
+
+.diag-error {
+  color: red;
+}
+
+.diag-catastrophic {
+  background-color: red;
+  color: black;
+}

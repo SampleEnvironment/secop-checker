@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>SECoPCheck</title>
+        <link href="static/style.css" rel="stylesheet">
+        <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    </head>
+    <body>
+        <div class="wrapper">
+            <h2>SECoP description check</h2>
+            <textarea class="maininput" placeholder="Put your description here!" id="inputBox" name="inputBox" rows="5" cols="33">
+            </textarea>
+            <br>
+            <button class="submitBtn" hx-post="/check" hx-include="#inputBox" hx-swap="outerHTML" hx-target="#errors-div">
+                Check
+            </button>
+            <div class="errors-div" id=errors-div></div>
+        </div>
+    </body>
+</html>

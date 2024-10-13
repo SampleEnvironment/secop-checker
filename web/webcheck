@@ -1,0 +1,32 @@
+#!/usr/bin/python3
+
+import sys
+from pathlib import Path
+
+from flask import Flask, render_template, request
+
+sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
+
+import secop_check
+
+app = Flask('SECoPCheck')
+
+
+@app.route("/")
+def initial():
+    return render_template('index.html')
+
+
+@app.post("/check")
+def check():
+    checker = secop_check.Checker(version="1.0", output_json=True)
+    try:
+        checker.check(request.form['inputBox'])
+    except secop_check.Catastrophe:
+        pass
+    return render_template('partial/report.html', errors=checker._diags)
+
+
+if __name__ == '__main__':
+    host, port = 'localhost', 8000
+    app.run(host, port)

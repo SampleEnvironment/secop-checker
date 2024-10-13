@@ -1,0 +1,5 @@
+<div class="errors-div" id=errors-div>
+{% for err in errors %}
+    <div class="diag diag-{{ err.severity.name.lower()  }}"> {{ err.msg }} </div>
+{% endfor %}
+</div>
