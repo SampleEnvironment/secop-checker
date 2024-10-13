@@ -31,9 +31,57 @@ from pathlib import Path
 
 import yaml
 
-REQUIRED_INFO = {'kind', 'name', 'version', 'description'}
-ALLOWED_KINDS = {'Version', 'Interface', 'Command', 'Parameter', 'Property',
-                 'Datatype', 'System', 'Feature'}
+
+class opt:
+    def __init__(self, ty):
+        self.ty = ty
+
+
+META_SCHEMA = {
+    'Version': {
+        'systems': list,
+        'interfaces': list,
+        'features': list,
+        'parameters': list,
+        'commands': list,
+        'properties': dict,
+    },
+    'Interface': {
+        'base': opt(str),
+        'parameters': opt(list),
+        'commands': opt(list),
+        'properties': opt(list),
+    },
+    'Feature': {
+        'parameters': opt(list),
+        'commands': opt(list),
+        'properties': opt(list),
+    },
+    'System': {
+        'modules': list,
+    },
+    'Parameter': {
+        'readonly': bool,
+        'datainfo': str,
+        'properties': opt(list),
+        'optional': opt(bool),
+    },
+    'Command': {
+        'argument': str,
+        'result': str,
+        'properties': opt(list),
+        'optional': opt(bool),
+    },
+    'Property': {
+        'datainfo': str,
+        'optional': opt(bool),
+    },
+    'Datatype': {
+        'dataty': str,
+        'members': dict,
+    }
+}
+COMMON_META = {'kind', 'name', 'version', 'description'}
 
 
 # int-enum?
@@ -121,17 +169,38 @@ class Loader(DiagnosticBase):
     def _load_one(self, filename):
         with filename.open() as f:
             data = list(yaml.safe_load_all(f))
+
+        # check all objects in the file
         with self.with_context('File', filename):
             for spec in data:
-                for req in REQUIRED_INFO:
+                # check for required fields for all objects
+                for req in COMMON_META:
                     if req not in spec:
                         self.emit(Severity.ERROR, 'found spec item without '
                                   f'required `{req}`: {spec!r}')
                 spec['description'] = spec['description'].strip()
+
+                # check for kind and required fields for kind
                 kind = spec['kind']
-                if kind not in ALLOWED_KINDS:
+                if kind not in META_SCHEMA:
                     self.emit(Severity.ERROR, f'unknown kind {kind} '
                               f'in {spec!r}')
+                fields = set(spec) - COMMON_META
+                for field, ftype in META_SCHEMA[kind].items():
+                    fields.discard(field)
+                    if field not in spec and not isinstance(ftype, opt):
+                        self.emit(Severity.ERROR, f'missing field {field} '
+                                  f'in {spec!r}')
+                    elif field in spec:
+                        ftype = ftype.ty if isinstance(ftype, opt) else ftype
+                        if not isinstance(spec[field], ftype):
+                            self.emit(Severity.ERROR, f'invalid type for '
+                                      f'field {field} in {spec!r}')
+                if fields:
+                    self.emit(Severity.ERROR, f'unknown fields {fields} '
+                              f'in {spec!r}')
+
+                # check for duplicates
                 key = spec['name'], spec['version']
                 if key in self._all_objects.setdefault(kind, {}):
                     self.emit(Severity.ERROR, 'duplicate spec for '
