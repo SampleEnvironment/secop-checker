@@ -483,6 +483,7 @@ class DatainfoChecker(BaseTestChecker):
             self.checker.emit(Severity.ERROR, 'datainfo is empty')
         if 'type' not in description:
             self.checker.emit(Severity.ERROR, 'datainfo does not have a type')
+            description['type'] = 'unknown'
         # TODO more
 
 

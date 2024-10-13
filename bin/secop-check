@@ -22,8 +22,9 @@
 #
 # *****************************************************************************
 
-import sys
 import argparse
+import socket
+import sys
 from pathlib import Path
 
 # Add import path for inplace usage
@@ -34,8 +35,8 @@ import secop_check
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument('infile')
-    # parser.add_argument('outfile')
+    parser.add_argument('infile', help='input file with descriptive JSON '
+                        'or a TCP address in the form host:port')
     parser.add_argument('--json', action='store_true', help='output json')
     parser.add_argument('--version',
                         # TODO: other source
@@ -51,8 +52,24 @@ args = parse_args(sys.argv[1:])
 
 checker = secop_check.Checker(args.version, args.json)
 
-if args.infile == '-':
+if ':' in args.infile:
+    if args.infile.startswith('tcp://'):
+        args.infile = args.infile[6:]
+    host, port = args.infile.split(':')
+    port = int(port)
+
+    with socket.create_connection((host, port)) as s:
+        with s.makefile('rw') as sf:
+            sf.write('*IDN?\n')
+            sf.write('describe\n')
+            sf.flush()
+            idn = sf.readline()
+            desc = sf.readline()
+            desc = desc[desc.index('{'):]   # TODO: validate better
+
+elif args.infile == '-':
     desc = sys.stdin.read()
+
 else:
     with open(args.infile, encoding='utf-8') as f:
         desc = f.read()
