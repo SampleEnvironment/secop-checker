@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
 
 import secop_check
 
-app = Flask('SECoPCheck')
+app = Flask('SECoPCheck', root_path=str(Path(__file__).absolute().parent))
 
 
 @app.route("/")

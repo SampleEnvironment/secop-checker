@@ -9,8 +9,7 @@
     <body>
         <div class="wrapper">
             <h2>SECoP description check</h2>
-            <textarea class="maininput" placeholder="Put your description here!" id="inputBox" name="inputBox" rows="5" cols="33">
-            </textarea>
+            <textarea class="maininput" placeholder="Put your description here!" id="inputBox" name="inputBox" rows="5" cols="33"></textarea>
             <br>
             <button class="submitBtn" hx-post="/check" hx-include="#inputBox" hx-swap="outerHTML" hx-target="#errors-div">
                 Check
