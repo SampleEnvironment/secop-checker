@@ -30,8 +30,8 @@ members:
 kind: Datatype
 name: scaled
 version: 1
-description:
-dataty:
+description: scaled floating point transportet as integer
+dataty: int
 members:
   min:
     dataty: int
@@ -77,16 +77,16 @@ version: 1
 description: a boolean value
 dataty:
   bool
-members:
+members: {}
 
 ---
 kind: Datatype
 name: enum
 version: 1
 description: Collection of predefined values mapped to integers.
-dataty:
-  - string
-  - int
+dataty: todo
+  #- string
+  #- int
 members:
   members:
     dataty:
@@ -159,8 +159,8 @@ members:
 kind: Datatype
 name: struct
 version: 1
-description:
-dataty:
+description: mixed type collection of values
+dataty: TODO
 members:
   members:
     dataty:
