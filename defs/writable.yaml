@@ -15,4 +15,3 @@ parameters:
       # provided in the "target" element above.
       description: |
         The target value the modules main value should be set to.
-

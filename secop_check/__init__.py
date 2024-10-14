@@ -370,6 +370,15 @@ class Checker(DiagnosticBase):
             self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
                       'validate against, exiting')
 
+        # schema of params/commands by module, combined from interfaces,
+        # features and systems
+        self._all_pars = {}
+        self._all_cmds = {}
+        # combined schema of properties by module
+        self._all_modprops = {}
+        # combined schema of properties by (module, accessible)
+        self._all_accprops = {}
+
     def check(self, desc: str):
         try:
             desc = json.loads(desc)
@@ -388,7 +397,6 @@ class Checker(DiagnosticBase):
 
     def visit_with_checker(self, desc, checker):
         with self.with_context('SECNode', ''):
-            checker.visit('SECNode', desc)
             checker.visit_secnode(desc)
 
             for prop, propdesc in desc.items():
@@ -400,14 +408,12 @@ class Checker(DiagnosticBase):
                 # other node properties
                 else:
                     with self.with_context('Property', prop):
-                        checker.visit('Property', propdesc)
                         checker.visit_property('SECNode', prop, propdesc)
 
             checker.finish()
 
-    def _visit_module(self, module, moddesc, checker):
-        checker.visit('Module', moddesc)
-        checker.visit_module(module, moddesc)
+    def _visit_module(self, modname, moddesc, checker):
+        checker.visit_module(modname, moddesc)
 
         for prop, propdesc in moddesc.items():
             if prop == 'accessibles':
@@ -418,16 +424,13 @@ class Checker(DiagnosticBase):
                     with self.with_context(ty, accname):
                         checker.visit_datainfo(datainfo)
 
-                        checker.visit(ty, accdesc)
-
                         if ty == 'Command':
-                            checker.visit_command(accname, accdesc)
+                            checker.visit_command(modname, accname, accdesc)
                         else:
-                            checker.visit_parameter(accname, accdesc)
+                            checker.visit_parameter(modname, accname, accdesc)
 
                         for prop, propdesc in accdesc.items():
                             with self.with_context('Property', prop):
-                                checker.visit('Property', propdesc)
                                 checker.visit_property(ty, prop, propdesc)
 
                         checker.finish_accessible(accdesc)
@@ -435,10 +438,14 @@ class Checker(DiagnosticBase):
             # other module properties
             else:
                 with self.with_context('Property', prop):
-                    checker.visit('Property', propdesc)
                     checker.visit_property('Module', prop, propdesc)
 
-            checker.finish_module(module)
+            checker.finish_module(modname)
+
+
+def is_command(desc):
+    datainfo = desc.get('datainfo', {})
+    return datainfo.get('type') == 'command'
 
 
 class BaseTestChecker:
@@ -447,9 +454,6 @@ class BaseTestChecker:
     def __init__(self, checker):
         self.checker = checker
         self.spec = checker._spec
-
-    def visit(self, nodekind, description, name=None):
-        """Called at every element of the description."""
 
     def visit_property(self, nodekind, name, description):
         """Visiting properties of any node."""
@@ -460,10 +464,10 @@ class BaseTestChecker:
     def visit_module(self, name, description):
         """Visiting each module of a SECnode."""
 
-    def visit_parameter(self, name, description):
+    def visit_parameter(self, modname, name, description):
         """Visiting each accessible of a module."""
 
-    def visit_command(self, name, description):
+    def visit_command(self, modname, name, description):
         """Visiting each accessible of a module."""
 
     def visit_datainfo(self, description):
@@ -489,12 +493,14 @@ class BasicStructureChecker(BaseTestChecker):
 
     def visit_secnode(self, description):
         if 'modules' not in description:
-            self.checker.emit(Severity.CATASTROPHIC, 'missing modules dict')
+            self.checker.emit(Severity.ERROR, 'missing modules dict')
+            description['modules'] = {}
 
     def visit_module(self, name, description):
         if 'accessibles' not in description:
-            self.checker.emit(Severity.CATASTROPHIC,
+            self.checker.emit(Severity.ERROR,
                               'missing dict of module accessibles')
+            description['accessibles'] = {}
 
 
 class DatainfoChecker(BaseTestChecker):
@@ -519,6 +525,7 @@ class DatainfoChecker(BaseTestChecker):
 
 
 class NameChecker(BaseTestChecker):
+    """Checks that names conform to the required format."""
     name = 'names'
 
     _mod = re.compile(r'^[a-zA-Z]\w{0,62}$')
@@ -529,12 +536,12 @@ class NameChecker(BaseTestChecker):
             self.checker.emit(Severity.ERROR,
                               'does not match required module name format')
 
-    def visit_parameter(self, name, description):
+    def visit_parameter(self, modname, name, description):
         if not self._ident.match(name):
             self.checker.emit(Severity.ERROR,
                               'does not match required parameter name format')
 
-    def visit_command(self, name, description):
+    def visit_command(self, modname, name, description):
         if not self._ident.match(name):
             self.checker.emit(Severity.ERROR,
                               'does not match required command name format')
@@ -546,9 +553,28 @@ class NameChecker(BaseTestChecker):
 
 
 class InterfaceChecker(BaseTestChecker):
+    """Checks that all declared interfaces exist."""
     name = 'interface'
 
     def visit_module(self, name, description):
+        self.checker._all_pars[name] = {
+            pname: (par, None)
+            for (pname, par) in self.spec.inventory['Parameter'].items()
+        }
+        self.checker._all_cmds[name] = {
+            cname: (cmd, None)
+            for (cname, cmd) in self.spec.inventory['Command'].items()
+        }
+        self.checker._all_modprops[name] = self.spec.prop_map['Module'].copy()
+
+        for acc, accdesc in description['accessibles'].items():
+            if is_command(accdesc):
+                self.checker._all_accprops[name, acc] = \
+                    self.spec.prop_map['Command'].copy()
+            else:
+                self.checker._all_accprops[name, acc] = \
+                    self.spec.prop_map['Parameter'].copy()
+
         for iface in description.get('interface_classes', []):
             if iface.startswith('_'):  # TODO custom classes are allowed?
                 continue
@@ -558,24 +584,18 @@ class InterfaceChecker(BaseTestChecker):
                                   f'declares unknown interface class {iface}')
                 return
 
-            ifacedesc = self.spec.inventory['Interface'][iface]
-            for cmd, cmddesc in ifacedesc['commands'].items():
-                if cmddesc.get('optional', False):
-                    continue
-                if cmd not in description['accessibles']:
-                    self.checker.emit(
-                        Severity.ERROR,
-                        f'missing command {cmd} from interface {iface}'
-                    )
+            desc = self.spec.inventory['Interface'][iface]
+            self.checker._all_pars[name].update({
+                pname: (par, 'interface ' + iface)
+                for (pname, par) in desc['parameters'].items()
+            })
+            self.checker._all_cmds[name].update({
+                cname: (cmd, 'interfae ' + iface)
+                for (cname, cmd) in desc['commands'].items()
+            })
+            self.checker._all_modprops[name].update(desc['properties'])
 
-            for par, pardesc in ifacedesc['parameters'].items():
-                if pardesc.get('optional', False):
-                    continue
-                if par not in description['accessibles']:
-                    self.checker.emit(
-                        Severity.ERROR,
-                        f'missing parameter {par} from interface {iface}'
-                    )
+            # TODO: accessible props
 
         for feat in description.get('features', []):
             if feat.startswith('_'):  # TODO custom classes are allowed?
@@ -586,24 +606,18 @@ class InterfaceChecker(BaseTestChecker):
                                   f'declares unknown feature {feat}')
                 return
 
-            featdesc = self.spec.inventory['Feature'][feat]
-            for cmd, cmddesc in featdesc['commands'].items():
-                if cmddesc.get('optional', False):
-                    continue
-                if cmd not in description['accessibles']:
-                    self.checker.emit(
-                        Severity.ERROR,
-                        f'missing command {cmd} from feature {feat}'
-                    )
+            desc = self.spec.inventory['Feature'][feat]
+            self.checker._all_pars[name].update({
+                pname: (par, 'feature ' + feat)
+                for (pname, par) in desc['parameters'].items()
+            })
+            self.checker._all_cmds[name].update({
+                cname: (cmd, 'feature ' + feat)
+                for (cname, cmd) in desc['commands'].items()
+            })
+            self.checker._all_modprops[name].update(desc['properties'])
 
-            for par, pardesc in featdesc['parameters'].items():
-                if pardesc.get('optional', False):
-                    continue
-                if par not in description['accessibles']:
-                    self.checker.emit(
-                        Severity.ERROR,
-                        f'missing parameter {par} from feature {feat}'
-                    )
+            # TODO: accessible props
 
 
 class BasePropsChecker(BaseTestChecker):
@@ -637,40 +651,55 @@ class BasePropsChecker(BaseTestChecker):
                                  'modules')
 
     def visit_module(self, name, description):
-        all_props = self.spec.prop_map['Module'].copy()
-        for iface in description.get('interface_classes', []):
-            all_props.update(self.spec.inventory['Interface'][iface]['properties'])
-        for feat in description.get('features', []):
-            all_props.update(self.spec.inventory['Feature'][feat]['properties'])
-        # TODO add more from systems
-        self.check_props_present(description, all_props, 'accessibles')
+        self.check_props_present(description,
+                                 self.checker._all_modprops[name],
+                                 'accessibles')
 
-    def visit_parameter(self, name, description):
-        all_props = self.spec.prop_map['Parameter'].copy()
-        if name in self.spec.inventory['Parameter']:
-            all_props.update(self.spec.inventory['Parameter'][name]['properties'])
-        # TODO more interfaces, systems, features
-        self.check_props_present(description, all_props)
+    def visit_parameter(self, modname, name, description):
+        self.check_props_present(description,
+                                 self.checker._all_accprops[modname, name])
 
-    def visit_command(self, name, description):
-        all_props = self.spec.prop_map['Command'].copy()
-        if name in self.spec.inventory['Command']:
-            all_props.update(self.spec.inventory['Command'][name]['properties'])
-        # TODO more interfaces, systems, features
-        self.check_props_present(description, all_props)
+    def visit_command(self, modname, name, description):
+        self.check_props_present(description,
+                                 self.checker._all_accprops[modname, name])
 
 
 class AccessibleChecker(BaseTestChecker):
+    """Checks that modules have all accessibles required by their
+    interfaces/features and that accessibles match the spec.
+    """
     name = 'accessibles'
+
+    def visit_module(self, name, description):
+        for pname, (parspec, from_) in self.checker._all_pars[name].items():
+            if from_ and not parspec.get('optional', False) and \
+               pname not in description['accessibles']:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'missing required parameter {pname} from {from_}'
+                )
+        for cname, (cmdspec, from_) in self.checker._all_cmds[name].items():
+            if from_ and not cmdspec.get('optional', False) and \
+               cname not in description['accessibles']:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'missing required command {cname} from {from_}'
+                )
 
     def check_datainfo(self, description, should):
         pass  # TODO nothing we can do so far
 
-    def visit_parameter(self, name, description):
-        should = self.spec.inventory['Parameter'].get(name)
+    def visit_parameter(self, modname, name, description):
+        should = self.checker._all_pars[modname].get(name)
         if should is None:
-            # TODO: could be from a System
+            if not name.startswith('_'):
+                self.checker.emit(
+                    Severity.WARNING,
+                    'non-standard parameters need \'_\' as a prefix'
+                )
             return
+        should = should[0]
+
         if description['readonly'] != should['readonly']:
             if should['readonly']:
                 self.checker.emit(Severity.WARNING,
@@ -680,11 +709,16 @@ class AccessibleChecker(BaseTestChecker):
                                   'parameter should not be readonly')
         self.check_datainfo(description['datainfo'], should['datainfo'])
 
-    def visit_command(self, name, description):
-        should = self.spec.inventory['Command'].get(name)
+    def visit_command(self, modname, name, description):
+        should = self.checker._all_cmds[modname].get(name)
         if should is None:
-            # TODO: could be from a System
+            if not name.startswith('_'):
+                self.checker.emit(
+                    Severity.WARNING,
+                    'non-standard commands need \'_\' as a prefix'
+                )
             return
+        should = should[0]
 
         if 'argument' in description['datainfo']:
             if should['argument'] == 'none':
