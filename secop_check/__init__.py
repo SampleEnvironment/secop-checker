@@ -141,7 +141,7 @@ class DiagnosticBase:
         self._context.path.pop()
 
     def emit(self, severity, msg):
-        diag = Diagnostic(severity, self._step, self._context, msg)
+        diag = Diagnostic(severity, self._step, deepcopy(self._context), msg)
         self._diags.append(diag)
         self._print(diag)
         if severity == Severity.CATASTROPHIC:
@@ -385,7 +385,6 @@ class Checker(DiagnosticBase):
         except json.JSONDecodeError as e:
             self.emit(Severity.CATASTROPHIC, f'invalid json at line {e.lineno}'
                       f' column {e.colno}:\n{e.msg}')
-
         # TODO: add mechanism to add additional yaml repos from desc here
 
         self.visit_descriptive_data(desc)
