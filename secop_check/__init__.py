@@ -46,6 +46,11 @@ META_SCHEMA = {
         'commands': list,
         'properties': dict,
     },
+    'System': {
+        'base': opt(str),
+        'modules': list,
+        'systems': list,
+    },
     'Interface': {
         'base': opt(str),
         'parameters': opt(list),
@@ -56,9 +61,6 @@ META_SCHEMA = {
         'parameters': opt(list),
         'commands': opt(list),
         'properties': opt(list),
-    },
-    'System': {
-        'modules': list,
     },
     'Parameter': {
         'readonly': bool,

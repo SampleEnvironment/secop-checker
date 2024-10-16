@@ -30,7 +30,7 @@ members:
 kind: Datatype
 name: scaled
 version: 1
-description: scaled floating point transportet as integer
+description: scaled floating point transported as integer
 dataty: int
 members:
   min:
