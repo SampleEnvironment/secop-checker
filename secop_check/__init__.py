@@ -49,7 +49,7 @@ META_SCHEMA = {
     'System': {
         'base': opt(str),
         'modules': list,
-        'systems': list,
+        'systems': opt(list),
     },
     'Interface': {
         'base': opt(str),
