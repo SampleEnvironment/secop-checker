@@ -751,6 +751,7 @@ class BasePropsChecker(BaseTestChecker):
                         f'{member}: non-standard properties need \'_\' as a prefix'
                     )
             else:
+                # TODO: implement special "parent" dataty
                 with self.checker.with_context('Property', member):
                     self.checker.check_dataty(props[member][0]['dataty'],
                                               mvalue)
@@ -828,10 +829,24 @@ class AccessibleChecker(BaseTestChecker):
                                           f'missing struct member {kval_key}')
                     else:
                         self.check_datainfo_template(kval_item, aval[kval_key])
+            elif key == 'type':
+                # handle special cases
+                if kval == 'any':
+                    aval = kval
+                elif kval == 'number' and aval in ('double', 'scaled', 'int'):
+                    aval = kval
+                elif kval == 'double' and aval == 'scaled':
+                    aval = kval
+
+                if kval != aval:
+                    self.checker.emit(Severity.ERROR,
+                                      f'expected datainfo {key} {kval}, '
+                                      f'got {aval!r}')
             else:
                 if kval != aval:
                     self.checker.emit(Severity.ERROR,
-                                      f'expected datainfo {kval}, got {aval!r}')
+                                      f'expected datainfo {key} {kval}, '
+                                      f'got {aval!r}')
 
     def visit_parameter(self, modname, name, description):
         should = self.checker.get_parameters(modname).get(name)
