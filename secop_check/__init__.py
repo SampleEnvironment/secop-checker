@@ -45,6 +45,7 @@ META_SCHEMA = {
         'parameters': list,
         'commands': list,
         'properties': dict,
+        'datainfo': list,
     },
     'System': {
         'base': opt(str),
@@ -64,21 +65,21 @@ META_SCHEMA = {
     },
     'Parameter': {
         'readonly': bool,
-        'datainfo': str,
+        'datainfo': (str, dict),
         'properties': opt(list),
         'optional': opt(bool),
     },
     'Command': {
-        'argument': str,
-        'result': str,
+        'argument': (str, dict),
+        'result': (str, dict),
         'properties': opt(list),
         'optional': opt(bool),
     },
     'Property': {
-        'datainfo': str,
+        'dataty': (str, dict),
         'optional': opt(bool),
     },
-    'Datatype': {
+    'Datainfo': {
         'dataty': str,
         'members': dict,
     }
@@ -198,7 +199,8 @@ class Loader(DiagnosticBase):
                         self.emit(Severity.ERROR, f'missing field {field} '
                                   f'in {spec!r}')
                     elif field in spec:
-                        ftype = ftype.ty if isinstance(ftype, opt) else ftype
+                        if isinstance(ftype, opt):
+                            ftype = ftype.ty
                         if not isinstance(spec[field], ftype):
                             self.emit(Severity.ERROR, f'invalid type for '
                                       f'field {field} in {spec!r}')
@@ -271,30 +273,31 @@ class Loader(DiagnosticBase):
 
                 with self.with_context('Interface', name):
                     if 'base' in iface:
-                        iface['base'] = self._resolve('Interface', iface['base'])
+                        # TODO: check bases
+                        iface['base'] = self._resolve('Interface', iface['base'])[1]
                     else:
                         iface['base'] = None
 
                     new_params = {}
                     for param in iface.get('parameters', []):
                         pname, param = self._resolve('Parameter', param)
-                        new_params[pname] = param
+                        new_params[pname] = param  # TODO multiple versions
                     iface['parameters'] = new_params
 
                     new_cmds = {}
                     for cmd in iface.get('commands', []):
                         cname, cmd = self._resolve('Command', cmd)
-                        new_cmds[cname] = cmd
+                        new_cmds[cname] = cmd  # TODO multiple versions
                     iface['commands'] = new_cmds
 
                     new_props = {}
                     for prop in iface.get('properties', []):
                         pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop
+                        new_props[pname] = prop  # TODO multiple versions
                     iface['properties'] = new_props
 
                 # TODO: check for duplicate interfaces
-                inv.setdefault('Interface', {})[name] = iface
+                inv.setdefault('Interface', {})[name] = iface  # TODO multiple versions
 
             for ref in ver['features']:
                 name, feat = self._resolve('Feature', ref)
@@ -303,23 +306,23 @@ class Loader(DiagnosticBase):
                     new_params = {}
                     for param in feat.get('parameters', []):
                         pname, param = self._resolve('Parameter', param)
-                        new_params[pname] = param
+                        new_params[pname] = param  # TODO multiple versions
                     feat['parameters'] = new_params
 
                     new_cmds = {}
                     for cmd in feat.get('commands', []):
                         cname, cmd = self._resolve('Command', cmd)
-                        new_cmds[cname] = cmd
+                        new_cmds[cname] = cmd  # TODO multiple versions
                     feat['commands'] = new_cmds
 
                     new_props = {}
                     for prop in feat.get('properties', []):
                         pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop
+                        new_props[pname] = prop  # TODO multiple versions
                     feat['properties'] = new_props
 
                 # TODO: check for duplicates
-                inv.setdefault('Feature', {})[name] = feat
+                inv.setdefault('Feature', {})[name] = feat  # TODO multiple versions
 
             for ref in ver['parameters']:
                 name, par = self._resolve('Parameter', ref)
@@ -328,11 +331,11 @@ class Loader(DiagnosticBase):
                     new_props = {}
                     for prop in par.get('properties', []):
                         pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop
+                        new_props[pname] = prop  # TODO multiple versions
                     par['properties'] = new_props
 
                 # TODO: check for duplicates
-                inv.setdefault('Parameter', {})[name] = par
+                inv.setdefault('Parameter', {})[name] = par  # TODO multiple versions
 
             for ref in ver['commands']:
                 name, cmd = self._resolve('Command', ref)
@@ -341,16 +344,20 @@ class Loader(DiagnosticBase):
                     new_props = {}
                     for prop in cmd.get('properties', []):
                         pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop
+                        new_props[pname] = prop  # TODO multiple versions
                     cmd['properties'] = new_props
 
                 # TODO: check for duplicates
-                inv.setdefault('Command', {})[name] = cmd
+                inv.setdefault('Command', {})[name] = cmd  # TODO multiple versions
 
             for (proptype, props) in ver['properties'].items():
                 for ref in props:
                     name, prop = self._resolve('Property', ref)
-                    prop_map.setdefault(proptype, {})[name] = prop
+                    prop_map.setdefault(proptype, {})[name] = prop  # TODO multiple versions
+
+            for dtype in ver['datainfo']:
+                name, dtype = self._resolve('Datainfo', dtype)
+                inv.setdefault('Datainfo', {})[name] = dtype  # TODO multiple versions
 
         return Spec(version, ver['version'], ver['description'], {
             'systems': ver['systems'],
@@ -423,6 +430,110 @@ class Checker(DiagnosticBase):
     def get_acc_properties(self, name, acc):
         return self._all_accprops.get((name, acc), {})
 
+    def check_dataty(self, description, actual, quiet=False):
+        matches = False
+        expected = description
+        if description == 'any':
+            matches = True
+        elif description == 'number':
+            matches = isinstance(actual, (int, float))
+        elif description == 'double':
+            matches = isinstance(actual, float)
+        elif description == 'int':
+            matches = isinstance(actual, int) or \
+                (isinstance(actual, float) and actual.is_integer())
+        elif description == 'string':
+            matches = isinstance(actual, str)
+        elif description == 'bool':
+            matches = isinstance(actual, bool)
+        elif description in ('array', 'tuple'):  # without further details
+            matches = isinstance(actual, list)
+        elif description == 'struct':            # without further details
+            matches = isinstance(actual, dict)
+        elif description == 'datainfo':
+            self.check_datainfo(actual)
+            matches = True  # check_datainfo will emit errors
+        elif isinstance(description, dict) and description['type'] == 'array':
+            expected = f'array of {description["members"]}'
+            matches = isinstance(actual, list) and \
+                all(self.check_dataty(description['members'], v, quiet=True)
+                    for v in actual)
+        elif isinstance(description, dict) and description['type'] == 'tuple':
+            expected = 'array of ' + ', '.join(map(str, description['members']))
+            matches = isinstance(actual, list) and \
+                len(actual) == len(description['members']) and \
+                all(self.check_dataty(desc, v, quiet=True)
+                    for desc, v in zip(description['members'], actual))
+        elif isinstance(description, dict) and description['type'] == 'struct':
+            if isinstance(description['members'], str):
+                expected = ('struct with str names and '
+                            f'{description["members"]} values')
+                matches = isinstance(actual, dict) and \
+                    all(isinstance(k, str) for k in actual) and \
+                    all(self.check_dataty(description['members'],
+                                          v, quiet=True)
+                        for v in actual.values())
+            else:
+                expected = 'struct with ' + ', '.join(
+                    f'{k}: {v}' for k, v in description['members'].items())
+                optional = description.get('optional', [])
+                matches = isinstance(actual, dict) and \
+                    all((k not in actual and k in optional) or
+                        (k in actual and
+                         self.check_dataty(description['members'][k],
+                                           actual[k], quiet=True))
+                        for k in description['members'])
+        else:
+            self.emit(Severity.CATASTROPHIC, 'unknown dataty given in spec: '
+                      f'{description}')
+
+        if not matches and not quiet:
+            self.emit(Severity.ERROR,
+                      f'expected {expected}, got {actual!r}')
+        return matches
+
+    def check_datainfo(self, description):
+        """Check validity of a datainfo description."""
+        if not description:
+            self.emit(Severity.ERROR, 'datainfo is empty')
+        if 'type' not in description:
+            self.emit(Severity.ERROR, 'datainfo does not have a type')
+            description['type'] = 'unknown'
+
+        descty = description['type']
+
+        # handle commands recursively
+        if descty == 'command':
+            if 'argument' in description:
+                with self.with_context('argument', ''):
+                    self.check_datainfo(description['argument'])
+            if 'result' in description:
+                with self.with_context('result', ''):
+                    self.check_datainfo(description['result'])
+            return
+
+        basic = self._spec.inventory['Datainfo'].get(descty)
+        if basic is None:
+            self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
+            return
+
+        actual_props = set(description) - {'type'}
+        for prop, propdesc in basic['members'].items():
+            if prop not in actual_props:
+                if not propdesc.get('optional', False):
+                    self.emit(Severity.ERROR,
+                              'missing required property for datainfo '
+                              f'{descty}: {prop}')
+            else:
+                with self.with_context('datainfo ' + descty, prop):
+                    self.check_dataty(propdesc['dataty'], description[prop])
+            actual_props.discard(prop)
+
+        if actual_props:
+            self.emit(Severity.WARNING,
+                      'unknown properties given for datainfo '
+                      f'{descty}: {actual_props}')
+
     def visit_descriptive_data(self, desc):
         for checkercls in CHECKERS:
             self._step = checkercls.name
@@ -455,8 +566,6 @@ class Checker(DiagnosticBase):
                     ty = 'Command' if datainfo.get('type') == 'command' \
                         else 'Parameter'
                     with self.with_context(ty, accname):
-                        checker.visit_datainfo(datainfo)
-
                         if ty == 'Command':
                             checker.visit_command(modname, accname, accdesc)
                         else:
@@ -503,9 +612,6 @@ class BaseTestChecker:
     def visit_command(self, modname, name, description):
         """Visiting each accessible of a module."""
 
-    def visit_datainfo(self, description):
-        """Visiting datainfo entries of accessibles."""
-
     def finish_accessible(self, description):
         """Called after all subelements of an accessible."""
 
@@ -534,27 +640,6 @@ class BasicStructureChecker(BaseTestChecker):
             self.checker.emit(Severity.ERROR,
                               'missing dict of module accessibles')
             description['accessibles'] = {}
-
-
-class DatainfoChecker(BaseTestChecker):
-    """Checks for valid datainfos, no matter where they are defined.
-    """
-    name = 'datainfo'
-
-    def visit_datainfo(self, description):
-        if not description:
-            self.checker.emit(Severity.ERROR, 'datainfo is empty')
-        if 'type' not in description:
-            self.checker.emit(Severity.ERROR, 'datainfo does not have a type')
-            description['type'] = 'unknown'
-        if description['type'] == 'command':
-            if 'argument' in description:
-                with self.checker.with_context('datainfo', 'argument'):
-                    self.visit_datainfo(description['argument'])
-            if 'result' in description:
-                with self.checker.with_context('datainfo', 'result'):
-                    self.visit_datainfo(description['result'])
-        # TODO more
 
 
 class NameChecker(BaseTestChecker):
@@ -650,12 +735,12 @@ class InterfaceChecker(BaseTestChecker):
 class BasePropsChecker(BaseTestChecker):
     name = 'properties-basic'
 
-    def check_props_present(self, description, props, skip=None):
+    def check_props(self, description, props, skip=None):
         required = set(
             [prop for prop, (propspec, _) in props.items()
              if not propspec.get('optional', False)]
         )
-        for member, mvalues in description.items():
+        for member, mvalue in description.items():
             if member == skip:
                 continue
             required.discard(member)
@@ -665,7 +750,11 @@ class BasePropsChecker(BaseTestChecker):
                         Severity.WARNING,
                         f'{member}: non-standard properties need \'_\' as a prefix'
                     )
-                # TODO: check custom property datainfo etc if possible
+            else:
+                with self.checker.with_context('Property', member):
+                    self.checker.check_dataty(props[member][0]['dataty'],
+                                              mvalue)
+
         if required:
             self.checker.emit(
                 Severity.ERROR,
@@ -673,23 +762,23 @@ class BasePropsChecker(BaseTestChecker):
             )
 
     def visit_secnode(self, description):
-        self.check_props_present(description,
-                                 {pname: (p, None) for (pname, p) in
-                                  self.spec.prop_map['SECNode'].items()},
-                                 'modules')
+        self.check_props(description,
+                         {pname: (p, None) for (pname, p) in
+                          self.spec.prop_map['SECNode'].items()},
+                         'modules')
 
     def visit_module(self, name, description):
-        self.check_props_present(description,
-                                 self.checker.get_mod_properties(name),
-                                 'accessibles')
+        self.check_props(description,
+                         self.checker.get_mod_properties(name),
+                         'accessibles')
 
     def visit_parameter(self, modname, name, description):
-        self.check_props_present(description,
-                                 self.checker.get_acc_properties(modname, name))
+        self.check_props(description,
+                         self.checker.get_acc_properties(modname, name))
 
     def visit_command(self, modname, name, description):
-        self.check_props_present(description,
-                                 self.checker.get_acc_properties(modname, name))
+        self.check_props(description,
+                         self.checker.get_acc_properties(modname, name))
 
 
 class AccessibleChecker(BaseTestChecker):
@@ -714,8 +803,35 @@ class AccessibleChecker(BaseTestChecker):
                     f'missing required command {cname} from {from_}'
                 )
 
-    def check_datainfo(self, description, should):
-        pass  # TODO nothing we can do so far
+    def check_datainfo_template(self, should, actual):
+        """Check if a prescribed datainfo matches the actual datainfo.
+
+        Does not check the datainfo itself for validity, this was done in
+        BasePropsChecker.
+        """
+        if should == 'any':
+            return
+        if isinstance(should, str):
+            should = {'type': should}
+
+        for key, kval in should.items():
+            aval = actual.get(key, '<nothing>')
+            if should['type'] == 'array' and key == 'members':
+                self.check_datainfo_template(kval, aval)
+            elif should['type'] == 'tuple' and key == 'members':
+                for i, (kval_item, aval_item) in enumerate(zip(kval, aval)):
+                    self.check_datainfo_template(kval_item, aval_item)
+            elif should['type'] == 'struct' and key == 'members':
+                for kval_key, kval_item in kval.items():
+                    if kval_key not in aval:
+                        self.checker.emit(Severity.ERROR,
+                                          f'missing struct member {kval_key}')
+                    else:
+                        self.check_datainfo_template(kval_item, aval[kval_key])
+            else:
+                if kval != aval:
+                    self.checker.emit(Severity.ERROR,
+                                      f'expected datainfo {kval}, got {aval!r}')
 
     def visit_parameter(self, modname, name, description):
         should = self.checker.get_parameters(modname).get(name)
@@ -735,7 +851,8 @@ class AccessibleChecker(BaseTestChecker):
             else:
                 self.checker.emit(Severity.WARNING,
                                   'parameter should not be readonly')
-        self.check_datainfo(description['datainfo'], should['datainfo'])
+        self.check_datainfo_template(should['datainfo'],
+                                     description['datainfo'])
 
     def visit_command(self, modname, name, description):
         should = self.checker.get_commands(modname).get(name)
@@ -753,8 +870,8 @@ class AccessibleChecker(BaseTestChecker):
                 self.checker.emit(Severity.WARNING,
                                   'command should not have an argument')
             else:
-                self.check_datainfo(description['datainfo']['argument'],
-                                    should['argument'])
+                self.check_datainfo_template(
+                    should['argument'], description['datainfo']['argument'])
         else:
             if should['argument'] != 'none':
                 self.checker.emit(Severity.WARNING,
@@ -766,8 +883,8 @@ class AccessibleChecker(BaseTestChecker):
                 self.checker.emit(Severity.WARNING,
                                   'command should not have an result')
             else:
-                self.check_datainfo(description['datainfo']['result'],
-                                    should['result'])
+                self.check_datainfo_template(
+                    should['result'], description['datainfo']['result'])
         else:
             if should['result'] != 'none':
                 self.checker.emit(Severity.WARNING,
@@ -775,5 +892,5 @@ class AccessibleChecker(BaseTestChecker):
                                   f'{should["result"]}')
 
 
-CHECKERS = [BasicStructureChecker, DatainfoChecker, NameChecker,
+CHECKERS = [BasicStructureChecker, NameChecker,
             InterfaceChecker, BasePropsChecker, AccessibleChecker]

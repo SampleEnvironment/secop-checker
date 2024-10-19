@@ -2,7 +2,7 @@
 kind: Parameter
 name: value
 version: 1
-datainfo: numeric
+datainfo: any
 readonly: true
 description: |
   The value parameter.
@@ -11,7 +11,9 @@ description: |
 kind: Parameter
 name: status
 version: 1
-datainfo: tuple of status-code, message
+datainfo:
+  type: tuple
+  members: [enum, string]
 readonly: true
 description: |
   The status parameter.
@@ -20,7 +22,7 @@ description: |
 kind: Parameter
 name: target
 version: 1
-datainfo: numeric
+datainfo: any
 readonly: false
 description: |
   The target value for the module. By setting this parameter, a move
@@ -39,7 +41,7 @@ description: |
 kind: Parameter
 name: offset
 version: 1
-datainfo: numeric
+datainfo: number
 readonly: false
 description: |
   Offset parameter for the HasOffset feature.
@@ -48,7 +50,9 @@ description: |
 kind: Parameter
 name: target_limits
 version: 1
-datainfo: tuple numeric, numeric
+datainfo:
+  type: tuple
+  members: [number, number]
 readonly: true
 description: |
   Changeble user-defined limits for the target parameter of a module.
@@ -58,7 +62,7 @@ description: |
 kind: Parameter
 name: ramp
 version: 1
-datainfo: numeric
+datainfo: number
 readonly: false
 description: |
   Desired ramp. Unit is main-unit/min.
@@ -67,7 +71,7 @@ description: |
 kind: Parameter
 name: setpoint
 version: 1
-datainfo: numeric
+datainfo: number
 readonly: true
 description: |
   ramping setpoint
@@ -76,7 +80,7 @@ description: |
 kind: Parameter
 name: time_to_target
 version: 1
-datainfo: numeric
+datainfo: number
 readonly: true
 description: |
   Expected time to reach the target in seconds
@@ -94,7 +98,7 @@ description: |
 kind: Parameter
 name: control_active
 version: 1
-datainfo: boolean
+datainfo: bool
 readonly: true
 description: |
   Indicates whether this module is actively controlling.

@@ -42,6 +42,10 @@ properties:
     - firmware:1
     - implementor:1
     - timeout:1
+    - meaning:2
+  System:
+    # TODO more
+    - meaning:2
   Module:
     - description:1
     - implementor:1
@@ -50,6 +54,7 @@ properties:
     - visibility:1
     - group:1
     - meaning:1
+    - meaning:2  # both are allowed
     - features:1
   Parameter:
     - datainfo:1
@@ -58,8 +63,22 @@ properties:
     - group:1
     - constant:1
     - readonly:1
+    - meaning:2
   Command:
     - datainfo:1
     - description:1
     - visibility:1
     - group:1
+    - meaning:2
+
+datainfo:
+  - double:1
+  - int:1
+  - scaled:1
+  - bool:1
+  - enum:1
+  - string:1
+  - blob:1
+  - array:1
+  - tuple:1
+  - struct:1

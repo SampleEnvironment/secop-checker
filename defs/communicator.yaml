@@ -6,7 +6,7 @@ description: |
   the hardware.
 commands:
   - communicate:
-      argument: str
-      result: str
+      argument: string
+      result: string
       description: |
         Communicate with the hardware directly.

@@ -1,25 +1,25 @@
 ---
-kind: Datatype
+kind: Datainfo
 name: double
 version: 1
-description: floating point value
-dataty: double
+description: A floating point value.
+dataty: number
 members:
   min:
-    dataty: int
+    dataty: number
     optional: true
   max:
-    dataty: int
+    dataty: number
     optional: true
   unit:
     dataty: string
     optional: true
   absolute_resolution:
-    dataty: double
+    dataty: number
     optional: true
   relative_resolution:
     default: 1.2e-7
-    dataty: double
+    dataty: number
     optional: true
   fmtstr:
     dataty: string
@@ -27,10 +27,10 @@ members:
     optional: true
 
 ---
-kind: Datatype
+kind: Datainfo
 name: scaled
 version: 1
-description: scaled floating point transported as integer
+description: A floating point transported as integer with defined scale.
 dataty: int
 members:
   min:
@@ -38,16 +38,16 @@ members:
   max:
     dataty: int
   scale:
-    dataty: double
+    dataty: number
   unit:
     dataty: string
     optional: true
   absolute_resolution:
-    dataty: double
+    dataty: number
     optional: true
   relative_resolution:
     default: 1.2e-7
-    dataty: double
+    dataty: number
     optional: true
   fmtstr:
     dataty: string
@@ -55,11 +55,10 @@ members:
     optional: true
 
 ---
-kind: Datatype
+kind: Datainfo
 name: int
 version: 1
-description: |
-  An int
+description: An integral value.
 dataty: int
 members:
   min:
@@ -71,36 +70,31 @@ members:
     optional: true
 
 ---
-kind: Datatype
+kind: Datainfo
 name: bool
 version: 1
-description: a boolean value
-dataty:
-  bool
+description: A boolean value.
+dataty: bool
 members: {}
 
 ---
-kind: Datatype
+kind: Datainfo
 name: enum
 version: 1
 description: Collection of predefined values mapped to integers.
-dataty: todo
-  #- string
-  #- int
+dataty: int
 members:
   members:
     dataty:
-      dict:
-        key: string    # TODO: how to define this nicely?
-        value: int
+      type: struct
+      members: int
 
 ---
-kind: Datatype
+kind: Datainfo
 name: string
 version: 1
-description: |
-  A string
-dataty: str
+description: A string.
+dataty: string
 members:
   minchars:
     optional: true
@@ -113,11 +107,11 @@ members:
     dataty: bool
 
 ---
-kind: Datatype
+kind: Datainfo
 name: blob
 version: 1
-description: base64 encoded string for binary types
-dataty: ???  #TODO
+description: Base64 encoded string for binary types.
+dataty: string
 members:
   maxbytes:
     dataty: int
@@ -127,15 +121,14 @@ members:
     optional: true
 
 ---
-kind: Datatype
+kind: Datainfo
 name: array
 version: 1
-description: Multiple values of the same type
-dataty:
-  list
+description: Multiple values of the same type.
+dataty: array
 members:
   members:
-    dataty: datainfo  # TODO: cleanly define the recursion
+    dataty: datainfo
   maxlen:
     dataty: int
   minlen:
@@ -144,30 +137,30 @@ members:
     optional: true
 
 ---
-kind: Datatype
+kind: Datainfo
 name: tuple
 version: 1
-description: finite sequence of variously typed items
-dataty:
-  list
+description: Finite sequence of variously typed items.
+dataty: array
 members:
   members:
     dataty:
-      - datainfo
+      type: array
+      members: datainfo
 
 ---
-kind: Datatype
+kind: Datainfo
 name: struct
 version: 1
-description: mixed type collection of values
-dataty: TODO
+description: Mixed type collection of named values.
+dataty: struct
 members:
   members:
     dataty:
-      dict:
-        key: string
-        value: datainfo
+      type: struct
+      members: datainfo
   optional:
     dataty:
-      - string
+      type: array
+      members: string
     optional: true

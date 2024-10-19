@@ -2,7 +2,7 @@
 kind: Property
 name: description
 version: 1
-datainfo: string
+dataty: string
 description: |
   Human readable description.
 
@@ -10,7 +10,7 @@ description: |
 kind: Property
 name: equipment_id
 version: 1
-datainfo: string
+dataty: string
 description: |
   Worldwide unique identification string.
 
@@ -18,7 +18,7 @@ description: |
 kind: Property
 name: firmware
 version: 1
-datainfo: string
+dataty: string
 optional: true
 description: |
   short string naming the version of the SEC node software.
@@ -27,7 +27,7 @@ description: |
 kind: Property
 name: implementor
 version: 1
-datainfo: string
+dataty: string
 optional: true
 description: |
   Globally unique name of the implementor of this SECNode.
@@ -36,7 +36,7 @@ description: |
 kind: Property
 name: timeout
 version: 1
-datainfo: numeric
+dataty: number
 optional: true
 description: |
   Timeout in seconds for the SECNode to send an answer.
@@ -45,15 +45,27 @@ description: |
 kind: Property
 name: interface_classes
 version: 1
-datainfo: list of strings
+dataty:
+  type: array
+  members: string
 description: |
   List of the defined interface classes which are implemented for the Module.
 
 ---
 kind: Property
+name: features
+version: 1
+dataty:
+  type: array
+  members: string
+description: |
+  List of supported features.
+
+---
+kind: Property
 name: visibility
 version: 1
-datainfo: string
+dataty: string
 optional: true
 description: |
   Hint for clients to use for access control and filtering.
@@ -62,7 +74,7 @@ description: |
 kind: Property
 name: group
 version: 1
-datainfo: string
+dataty: string
 optional: true
 description: |
   Grouping hint for multiple modules.
@@ -71,49 +83,57 @@ description: |
 kind: Property
 name: meaning
 version: 1
-datainfo: tuple string, integer
+dataty:
+  type: tuple
+  members: [string, int]
 optional: true
 description: |
   Tuple describing one of the predefined meanings and a importance value.
 
 ---
 kind: Property
+name: meaning
+version: 2
+dataty:
+  type: struct
+  # TODO more members
+  members:
+    function: string
+  optional:
+    - function
+optional: true
+description: |
+  TODO
+
+---
+kind: Property
 name: implementation
 version: 1
-datainfo: string
+dataty: string
 description: |
   A string indicating information about the implementation of the module, like a python class name.
 
 ---
 kind: Property
-name: features
-version: 1
-datainfo: list of string
-description: |
-  List of supported features.
-
----
-kind: Property
 name: readonly
 version: 1
-datainfo: boolean
+dataty: bool
 description: |
-  indicates whether the parameter can be written by the ECS.
-  In this yaml-specification, it is shortened with a field
+  Indicates whether the parameter can be written by the ECS.
 
 ---
 kind: Property
 name: datainfo
 version: 1
-datainfo: JSON-object
+dataty: datainfo
 description: |
-  Datatype of the accessible.
+  Describes the type of the accessible's (or command argument/result's) value.
 
 ---
 kind: Property
 name: constant
 version: 1
-datainfo: like the Parameter which has this property
+dataty: parent  # same as the parameter with the property
 optional: true
 description: |
   Indicates a constant value that will not be included in updates, and does

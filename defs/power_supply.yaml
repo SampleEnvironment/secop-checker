@@ -2,7 +2,7 @@
 kind: Property
 name: quantity
 version: 1
-datainfo: string
+dataty: string
 optional: true
 description: |
   A hint of the physical quantity represented by this parameter.
@@ -28,17 +28,23 @@ modules:
         # This parameter is already defined by Drivable, but the required
         # datainfo is made more concrete by this definition.
         - value:
-            datainfo: numeric, has unit Ampere
+            datainfo:
+              type: double
+              unit: A
         # This parameter is completely specific to this module.
         - voltage_limit:
             description: |
               Compliance voltage applied when supply is in current mode.
-            datainfo: numeric, has unit Volts
+            datainfo:
+              type: double
+              unit: V
             optional: true
         - power_limit:
             description: |
               Power limit applied when supply is in current mode.
-            datainfo: numeric, has unit Watts
+            datainfo:
+              type: double
+              unit: W
             optional: true
         - control_active:
             definition: control_active:1
@@ -52,7 +58,9 @@ modules:
       optional: true
       parameters:
         value:
-          datainfo: numeric, has unit Ohms
+          datainfo:
+            type: number
+            unit: Ohm
       properties:
         quantity:
           definition: quantity:1
