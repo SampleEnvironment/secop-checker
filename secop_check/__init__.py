@@ -391,6 +391,38 @@ class Checker(DiagnosticBase):
 
         self.visit_descriptive_data(desc)
 
+    def add_parameters(self, name, params, source=None):
+        self._all_pars.setdefault(name, {}).update(
+            {pname: (par, source) for (pname, par) in params.items()}
+        )
+
+    def add_commands(self, name, cmds, source=None):
+        self._all_cmds.setdefault(name, {}).update(
+            {cname: (cmd, source) for (cname, cmd) in cmds.items()}
+        )
+
+    def add_mod_properties(self, name, props, source=None):
+        self._all_modprops.setdefault(name, {}).update(
+            {pname: (prop, source) for (pname, prop) in props.items()}
+        )
+
+    def add_acc_properties(self, name, acc, props, source=None):
+        self._all_accprops.setdefault((name, acc), {}).update(
+            {pname: (prop, source) for (pname, prop) in props.items()}
+        )
+
+    def get_parameters(self, name):
+        return self._all_pars.get(name, {})
+
+    def get_commands(self, name):
+        return self._all_cmds.get(name, {})
+
+    def get_mod_properties(self, name):
+        return self._all_modprops.get(name, {})
+
+    def get_acc_properties(self, name, acc):
+        return self._all_accprops.get((name, acc), {})
+
     def visit_descriptive_data(self, desc):
         for checkercls in CHECKERS:
             self._step = checkercls.name
@@ -554,30 +586,30 @@ class NameChecker(BaseTestChecker):
 
 
 class InterfaceChecker(BaseTestChecker):
-    """Checks that all declared interfaces exist."""
+    """Checks that all declared interfaces exist.
+
+    Also populates the allowed parameters, commands and properties for modules
+    and parameters/commands from all declared interfaces and features.
+
+    TODO: systems
+    """
     name = 'interface'
 
     def visit_module(self, name, description):
-        self.checker._all_pars[name] = {
-            pname: (par, None)
-            for (pname, par) in self.spec.inventory['Parameter'].items()
-        }
-        self.checker._all_cmds[name] = {
-            cname: (cmd, None)
-            for (cname, cmd) in self.spec.inventory['Command'].items()
-        }
-        self.checker._all_modprops[name] = self.spec.prop_map['Module'].copy()
+        self.checker.add_parameters(name, self.spec.inventory['Parameter'])
+        self.checker.add_commands(name, self.spec.inventory['Command'])
+        self.checker.add_mod_properties(name, self.spec.prop_map['Module'])
 
         for acc, accdesc in description['accessibles'].items():
             if is_command(accdesc):
-                self.checker._all_accprops[name, acc] = \
-                    self.spec.prop_map['Command'].copy()
+                self.checker.add_acc_properties(
+                    name, acc, self.spec.prop_map['Command'])
             else:
-                self.checker._all_accprops[name, acc] = \
-                    self.spec.prop_map['Parameter'].copy()
+                self.checker.add_acc_properties(
+                    name, acc, self.spec.prop_map['Parameter'])
 
         for iface in description.get('interface_classes', []):
-            if iface.startswith('_'):  # TODO custom classes are allowed?
+            if iface.startswith('_'):
                 continue
 
             if iface not in self.spec.inventory['Interface']:
@@ -586,20 +618,17 @@ class InterfaceChecker(BaseTestChecker):
                 return
 
             desc = self.spec.inventory['Interface'][iface]
-            self.checker._all_pars[name].update({
-                pname: (par, 'interface ' + iface)
-                for (pname, par) in desc['parameters'].items()
-            })
-            self.checker._all_cmds[name].update({
-                cname: (cmd, 'interfae ' + iface)
-                for (cname, cmd) in desc['commands'].items()
-            })
-            self.checker._all_modprops[name].update(desc['properties'])
+            self.checker.add_parameters(name, desc['parameters'],
+                                        'interface ' + iface)
+            self.checker.add_commands(name, desc['commands'],
+                                      'interface ' + iface)
+            self.checker.add_mod_properties(name, desc['properties'],
+                                            'interface ' + iface)
 
             # TODO: accessible props
 
         for feat in description.get('features', []):
-            if feat.startswith('_'):  # TODO custom classes are allowed?
+            if feat.startswith('_'):
                 continue
 
             if feat not in self.spec.inventory['Feature']:
@@ -608,15 +637,12 @@ class InterfaceChecker(BaseTestChecker):
                 return
 
             desc = self.spec.inventory['Feature'][feat]
-            self.checker._all_pars[name].update({
-                pname: (par, 'feature ' + feat)
-                for (pname, par) in desc['parameters'].items()
-            })
-            self.checker._all_cmds[name].update({
-                cname: (cmd, 'feature ' + feat)
-                for (cname, cmd) in desc['commands'].items()
-            })
-            self.checker._all_modprops[name].update(desc['properties'])
+            self.checker.add_parameters(name, desc['parameters'],
+                                        'interface ' + feat)
+            self.checker.add_commands(name, desc['commands'],
+                                      'interface ' + feat)
+            self.checker.add_mod_properties(name, desc['properties'],
+                                            'interface ' + feat)
 
             # TODO: accessible props
 
@@ -626,7 +652,7 @@ class BasePropsChecker(BaseTestChecker):
 
     def check_props_present(self, description, props, skip=None):
         required = set(
-            [prop for prop, propspec in props.items()
+            [prop for prop, (propspec, _) in props.items()
              if not propspec.get('optional', False)]
         )
         for member, mvalues in description.items():
@@ -648,21 +674,22 @@ class BasePropsChecker(BaseTestChecker):
 
     def visit_secnode(self, description):
         self.check_props_present(description,
-                                 self.spec.prop_map['SECNode'],
+                                 {pname: (p, None) for (pname, p) in
+                                  self.spec.prop_map['SECNode'].items()},
                                  'modules')
 
     def visit_module(self, name, description):
         self.check_props_present(description,
-                                 self.checker._all_modprops[name],
+                                 self.checker.get_mod_properties(name),
                                  'accessibles')
 
     def visit_parameter(self, modname, name, description):
         self.check_props_present(description,
-                                 self.checker._all_accprops[modname, name])
+                                 self.checker.get_acc_properties(modname, name))
 
     def visit_command(self, modname, name, description):
         self.check_props_present(description,
-                                 self.checker._all_accprops[modname, name])
+                                 self.checker.get_acc_properties(modname, name))
 
 
 class AccessibleChecker(BaseTestChecker):
@@ -672,14 +699,14 @@ class AccessibleChecker(BaseTestChecker):
     name = 'accessibles'
 
     def visit_module(self, name, description):
-        for pname, (parspec, from_) in self.checker._all_pars[name].items():
+        for pname, (parspec, from_) in self.checker.get_parameters(name).items():
             if from_ and not parspec.get('optional', False) and \
                pname not in description['accessibles']:
                 self.checker.emit(
                     Severity.ERROR,
                     f'missing required parameter {pname} from {from_}'
                 )
-        for cname, (cmdspec, from_) in self.checker._all_cmds[name].items():
+        for cname, (cmdspec, from_) in self.checker.get_commands(name).items():
             if from_ and not cmdspec.get('optional', False) and \
                cname not in description['accessibles']:
                 self.checker.emit(
@@ -691,7 +718,7 @@ class AccessibleChecker(BaseTestChecker):
         pass  # TODO nothing we can do so far
 
     def visit_parameter(self, modname, name, description):
-        should = self.checker._all_pars[modname].get(name)
+        should = self.checker.get_parameters(modname).get(name)
         if should is None:
             if not name.startswith('_'):
                 self.checker.emit(
@@ -711,7 +738,7 @@ class AccessibleChecker(BaseTestChecker):
         self.check_datainfo(description['datainfo'], should['datainfo'])
 
     def visit_command(self, modname, name, description):
-        should = self.checker._all_cmds[modname].get(name)
+        should = self.checker.get_commands(modname).get(name)
         if should is None:
             if not name.startswith('_'):
                 self.checker.emit(
