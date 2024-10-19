@@ -693,43 +693,35 @@ class InterfaceChecker(BaseTestChecker):
                 self.checker.add_acc_properties(
                     name, acc, self.spec.prop_map['Parameter'])
 
+        def add_baseclass(kind, clsname):
+            # kind: Interface or Feature
+            if clsname.startswith('_'):
+                return
+
+            if clsname not in self.spec.inventory[kind]:
+                self.checker.emit(Severity.ERROR,
+                                  f'declares unknown {kind}: {clsname}')
+                return
+
+            clsdesc = self.spec.inventory[kind][clsname]
+            self.checker.add_parameters(name, clsdesc['parameters'],
+                                        kind + ' ' + clsname)
+            self.checker.add_commands(name, clsdesc['commands'],
+                                      kind + ' ' + clsname)
+            self.checker.add_mod_properties(name, clsdesc['properties'],
+                                            kind + ' ' + clsname)
+
+            for par, pardesc in clsdesc['parameters'].items():
+                self.checker.add_acc_properties(name, par,
+                                                pardesc.get('properties', {}))
+            for cmd, cmddesc in clsdesc['commands'].items():
+                self.checker.add_acc_properties(name, cmd,
+                                                cmddesc.get('properties', {}))
+
         for iface in description.get('interface_classes', []):
-            if iface.startswith('_'):
-                continue
-
-            if iface not in self.spec.inventory['Interface']:
-                self.checker.emit(Severity.ERROR,
-                                  f'declares unknown interface class {iface}')
-                return
-
-            desc = self.spec.inventory['Interface'][iface]
-            self.checker.add_parameters(name, desc['parameters'],
-                                        'interface ' + iface)
-            self.checker.add_commands(name, desc['commands'],
-                                      'interface ' + iface)
-            self.checker.add_mod_properties(name, desc['properties'],
-                                            'interface ' + iface)
-
-            # TODO: accessible props
-
+            add_baseclass('Interface', iface)
         for feat in description.get('features', []):
-            if feat.startswith('_'):
-                continue
-
-            if feat not in self.spec.inventory['Feature']:
-                self.checker.emit(Severity.ERROR,
-                                  f'declares unknown feature {feat}')
-                return
-
-            desc = self.spec.inventory['Feature'][feat]
-            self.checker.add_parameters(name, desc['parameters'],
-                                        'interface ' + feat)
-            self.checker.add_commands(name, desc['commands'],
-                                      'interface ' + feat)
-            self.checker.add_mod_properties(name, desc['properties'],
-                                            'interface ' + feat)
-
-            # TODO: accessible props
+            add_baseclass('Feature', feat)
 
 
 class BasePropsChecker(BaseTestChecker):
