@@ -31,6 +31,7 @@ parameters:
   - value:1
   - status:1
   - target:1
+  - mode:1
   - offset:1
   - target_limits:1
   - ramp:1

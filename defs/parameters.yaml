@@ -48,6 +48,15 @@ description: |
 
 ---
 kind: Parameter
+name: mode
+version: 1
+datainfo: enum
+readonly: false
+description: |
+  Operation mode of the module.
+
+---
+kind: Parameter
 name: target_limits
 version: 1
 datainfo:
