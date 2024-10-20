@@ -122,16 +122,11 @@ class Catastrophe(Exception):
 
 
 @dataclass
-class Spec:
-    name: str
-    version: int
-    description: str
-    # Member lists of the given version
-    members: dict
+class Inventory:
     # Properties by kind
     prop_map: dict
     # All other objects, by kind
-    inventory: dict
+    objects: dict
 
 
 class DiagnosticBase:
@@ -274,7 +269,6 @@ class Loader(DiagnosticBase):
             base.update(props)
             return name, base
 
-        # TODO: implement references to other inventories
         if ':' not in reference:
             self.emit(Severity.CATASTROPHIC, f'invalid reference {reference}')
         name, version = reference.split(':')
@@ -289,131 +283,128 @@ class Loader(DiagnosticBase):
             self.emit(Severity.CATASTROPHIC, f'could not resolve {kind} '
                       f'reference {name}:{version}')
 
-    def load(self, version):
+    def load(self, version, additional):
         # resolve by version
         ver_root = self._root / f'version-{version}.yaml'
         if not ver_root.exists():
             self.emit(Severity.CATASTROPHIC, 'no root yaml found for '
                       f'version {version}')
 
-        ver = self._load_repo(ver_root)
+        repos = [self._load_repo(ver_root)]
+
+        for add in additional:
+            repos.append(self._load_repo(add))
 
         inv = {}
         prop_map = {}
 
-        with self.with_context('Version', version):
-            for ref in ver['systems']:
-                # TODO
-                pass
+        for repo in repos:
+            with self.with_context('Repository', repo['name']):
+                for ref in repo['systems']:
+                    # TODO
+                    pass
 
-            for ref in ver['interfaces']:
-                name, iface = self._resolve('Interface', ref)
+                for ref in repo['interfaces']:
+                    name, iface = self._resolve('Interface', ref)
 
-                with self.with_context('Interface', name):
-                    if 'base' in iface:
-                        # TODO: check bases
-                        iface['base'] = self._resolve('Interface', iface['base'])[1]
-                    else:
-                        iface['base'] = None
+                    with self.with_context('Interface', name):
+                        if 'base' in iface:
+                            # TODO: check bases
+                            iface['base'] = self._resolve('Interface', iface['base'])[1]
+                        else:
+                            iface['base'] = None
 
-                    new_params = {}
-                    for param in iface.get('parameters', []):
-                        pname, param = self._resolve('Parameter', param)
-                        new_params[pname] = param  # TODO multiple versions
-                    iface['parameters'] = new_params
+                        new_params = {}
+                        for param in iface.get('parameters', []):
+                            pname, param = self._resolve('Parameter', param)
+                            new_params[pname] = param  # TODO multiple versions
+                        iface['parameters'] = new_params
 
-                    new_cmds = {}
-                    for cmd in iface.get('commands', []):
-                        cname, cmd = self._resolve('Command', cmd)
-                        new_cmds[cname] = cmd  # TODO multiple versions
-                    iface['commands'] = new_cmds
+                        new_cmds = {}
+                        for cmd in iface.get('commands', []):
+                            cname, cmd = self._resolve('Command', cmd)
+                            new_cmds[cname] = cmd  # TODO multiple versions
+                        iface['commands'] = new_cmds
 
-                    new_props = {}
-                    for prop in iface.get('properties', []):
-                        pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop  # TODO multiple versions
-                    iface['properties'] = new_props
+                        new_props = {}
+                        for prop in iface.get('properties', []):
+                            pname, prop = self._resolve('Property', prop)
+                            new_props[pname] = prop  # TODO multiple versions
+                        iface['properties'] = new_props
 
-                # TODO: check for duplicate interfaces
-                inv.setdefault('Interface', {})[name] = iface  # TODO multiple versions
+                    # TODO: check for duplicate interfaces
+                    inv.setdefault('Interface', {})[name] = iface  # TODO multiple versions
 
-            for ref in ver['features']:
-                name, feat = self._resolve('Feature', ref)
+                for ref in repo['features']:
+                    name, feat = self._resolve('Feature', ref)
 
-                with self.with_context('Feature', name):
-                    new_params = {}
-                    for param in feat.get('parameters', []):
-                        pname, param = self._resolve('Parameter', param)
-                        new_params[pname] = param  # TODO multiple versions
-                    feat['parameters'] = new_params
+                    with self.with_context('Feature', name):
+                        new_params = {}
+                        for param in feat.get('parameters', []):
+                            pname, param = self._resolve('Parameter', param)
+                            new_params[pname] = param  # TODO multiple versions
+                        feat['parameters'] = new_params
 
-                    new_cmds = {}
-                    for cmd in feat.get('commands', []):
-                        cname, cmd = self._resolve('Command', cmd)
-                        new_cmds[cname] = cmd  # TODO multiple versions
-                    feat['commands'] = new_cmds
+                        new_cmds = {}
+                        for cmd in feat.get('commands', []):
+                            cname, cmd = self._resolve('Command', cmd)
+                            new_cmds[cname] = cmd  # TODO multiple versions
+                        feat['commands'] = new_cmds
 
-                    new_props = {}
-                    for prop in feat.get('properties', []):
-                        pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop  # TODO multiple versions
-                    feat['properties'] = new_props
+                        new_props = {}
+                        for prop in feat.get('properties', []):
+                            pname, prop = self._resolve('Property', prop)
+                            new_props[pname] = prop  # TODO multiple versions
+                        feat['properties'] = new_props
 
-                # TODO: check for duplicates
-                inv.setdefault('Feature', {})[name] = feat  # TODO multiple versions
+                    # TODO: check for duplicates
+                    inv.setdefault('Feature', {})[name] = feat  # TODO multiple versions
 
-            for ref in ver['parameters']:
-                name, par = self._resolve('Parameter', ref)
+                for ref in repo['parameters']:
+                    name, par = self._resolve('Parameter', ref)
 
-                with self.with_context('Parameter', name):
-                    new_props = {}
-                    for prop in par.get('properties', []):
-                        pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop  # TODO multiple versions
-                    par['properties'] = new_props
+                    with self.with_context('Parameter', name):
+                        new_props = {}
+                        for prop in par.get('properties', []):
+                            pname, prop = self._resolve('Property', prop)
+                            new_props[pname] = prop  # TODO multiple versions
+                        par['properties'] = new_props
 
-                # TODO: check for duplicates
-                inv.setdefault('Parameter', {})[name] = par  # TODO multiple versions
+                    # TODO: check for duplicates
+                    inv.setdefault('Parameter', {})[name] = par  # TODO multiple versions
 
-            for ref in ver['commands']:
-                name, cmd = self._resolve('Command', ref)
+                for ref in repo['commands']:
+                    name, cmd = self._resolve('Command', ref)
 
-                with self.with_context('Command', name):
-                    new_props = {}
-                    for prop in cmd.get('properties', []):
-                        pname, prop = self._resolve('Property', prop)
-                        new_props[pname] = prop  # TODO multiple versions
-                    cmd['properties'] = new_props
+                    with self.with_context('Command', name):
+                        new_props = {}
+                        for prop in cmd.get('properties', []):
+                            pname, prop = self._resolve('Property', prop)
+                            new_props[pname] = prop  # TODO multiple versions
+                        cmd['properties'] = new_props
 
-                # TODO: check for duplicates
-                inv.setdefault('Command', {})[name] = cmd  # TODO multiple versions
+                    # TODO: check for duplicates
+                    inv.setdefault('Command', {})[name] = cmd  # TODO multiple versions
 
-            for (proptype, props) in ver['properties'].items():
-                for ref in props:
-                    name, prop = self._resolve('Property', ref)
-                    prop_map.setdefault(proptype, {})[name] = prop  # TODO multiple versions
+                for (proptype, props) in repo['properties'].items():
+                    for ref in props:
+                        name, prop = self._resolve('Property', ref)
+                        prop_map.setdefault(proptype, {})[name] = prop  # TODO multiple versions
 
-            for dtype in ver['datainfo']:
-                name, dtype = self._resolve('Datainfo', dtype)
-                inv.setdefault('Datainfo', {})[name] = dtype  # TODO multiple versions
+                for dtype in repo['datainfo']:
+                    name, dtype = self._resolve('Datainfo', dtype)
+                    inv.setdefault('Datainfo', {})[name] = dtype  # TODO multiple versions
 
-        return Spec(version, ver['version'], ver['description'], {
-            'systems': ver['systems'],
-            'interfaces': ver['interfaces'],
-            'features': ver['features'],
-            'parameters': ver['parameters'],
-            'commands': ver['commands'],
-            'properties': ver['properties'],
-        }, prop_map, inv)
+        return Inventory(prop_map, inv)
 
 
 class Checker(DiagnosticBase):
-    def __init__(self, version, output):
+    def __init__(self, version, additional, output):
         super().__init__(output)
 
         loader = Loader(Path(__file__).parents[1] / 'defs', output)
         loader._diags = self._diags
-        self._spec = loader.load(version)
+        self._inv = loader.load(version, additional)
         if self._diags:
             self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
                       'validate against, exiting')
@@ -551,7 +542,7 @@ class Checker(DiagnosticBase):
                     self.check_datainfo(description['result'])
             return
 
-        basic = self._spec.inventory['Datainfo'].get(descty)
+        basic = self._inv.objects['Datainfo'].get(descty)
         if basic is None:
             self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
             return
@@ -634,7 +625,7 @@ class BaseTestChecker:
 
     def __init__(self, checker):
         self.checker = checker
-        self.spec = checker._spec
+        self.inv = checker._inv
 
     def visit_property(self, nodekind, name, description):
         """Visiting properties of any node."""
@@ -720,29 +711,29 @@ class InterfaceChecker(BaseTestChecker):
     name = 'interface'
 
     def visit_module(self, name, description):
-        self.checker.add_parameters(name, self.spec.inventory['Parameter'])
-        self.checker.add_commands(name, self.spec.inventory['Command'])
-        self.checker.add_mod_properties(name, self.spec.prop_map['Module'])
+        self.checker.add_parameters(name, self.inv.objects['Parameter'])
+        self.checker.add_commands(name, self.inv.objects['Command'])
+        self.checker.add_mod_properties(name, self.inv.prop_map['Module'])
 
         for acc, accdesc in description['accessibles'].items():
             if is_command(accdesc):
                 self.checker.add_acc_properties(
-                    name, acc, self.spec.prop_map['Command'])
+                    name, acc, self.inv.prop_map['Command'])
             else:
                 self.checker.add_acc_properties(
-                    name, acc, self.spec.prop_map['Parameter'])
+                    name, acc, self.inv.prop_map['Parameter'])
 
         def add_baseclass(kind, clsname):
             # kind: Interface or Feature
             if clsname.startswith('_'):
                 return
 
-            if clsname not in self.spec.inventory[kind]:
+            if clsname not in self.inv.objects[kind]:
                 self.checker.emit(Severity.ERROR,
                                   f'declares unknown {kind}: {clsname}')
                 return
 
-            clsdesc = self.spec.inventory[kind][clsname]
+            clsdesc = self.inv.objects[kind][clsname]
             self.checker.add_parameters(name, clsdesc['parameters'],
                                         kind + ' ' + clsname)
             self.checker.add_commands(name, clsdesc['commands'],
@@ -796,7 +787,7 @@ class BasePropsChecker(BaseTestChecker):
     def visit_secnode(self, description):
         self.check_props(description,
                          {pname: (p, None) for (pname, p) in
-                          self.spec.prop_map['SECNode'].items()},
+                          self.inv.prop_map['SECNode'].items()},
                          'modules')
 
     def visit_module(self, name, description):

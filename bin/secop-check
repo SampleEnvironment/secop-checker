@@ -44,6 +44,8 @@ def parse_args(argv):
                         default='1.0',
                         # no {default} syntax :/
                         help='version to check against (default: %(default)s)')
+    parser.add_argument('--schema', action='append', default=[],
+                        help='additional schema repository file to read')
     args = parser.parse_args(argv)
     return args
 
@@ -74,6 +76,7 @@ else:
 
 try:
     checker = secop_check.Checker(args.version,
+                                  args.schema,
                                   'json' if args.json else 'text')
     checker.check(desc)
 except secop_check.Catastrophe:
