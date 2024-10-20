@@ -1,9 +1,21 @@
 ---
-kind: Version
-name: "1.0"
+kind: Repository
+name: "SECoP 1.0"
 version: 1
 description: |
   Current version of the SECoP specification.
+
+files:
+  - commands.yaml
+  - communicator.yaml
+  - datatypes.yaml
+  - drivable.yaml
+  - features.yaml
+  - parameters.yaml
+  - power_supply.yaml
+  - properties.yaml
+  - readable.yaml
+  - writable.yaml
 
 systems:
   - PowerSupply:1

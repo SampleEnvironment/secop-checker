@@ -72,8 +72,9 @@ else:
     with open(args.infile, encoding='utf-8') as f:
         desc = f.read()
 
-checker = secop_check.Checker(args.version, args.json)
 try:
+    checker = secop_check.Checker(args.version,
+                                  'json' if args.json else 'text')
     checker.check(desc)
 except secop_check.Catastrophe:
     sys.exit(1)

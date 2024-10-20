@@ -27,7 +27,10 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from os import path
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
+from urllib.request import urlopen
 
 import yaml
 
@@ -38,7 +41,8 @@ class opt:
 
 
 META_SCHEMA = {
-    'Version': {
+    'Repository': {
+        'files': list,
         'systems': list,
         'interfaces': list,
         'features': list,
@@ -131,8 +135,8 @@ class Spec:
 
 
 class DiagnosticBase:
-    def __init__(self, output_json=False):
-        self._output_json = output_json
+    def __init__(self, output):
+        self._output = output
         self._diags = []
         self._step = ''
         self._context = Context(path=[])
@@ -151,14 +155,14 @@ class DiagnosticBase:
             raise Catastrophe
 
     def _print(self, diag):
-        if self._output_json:
+        if self._output == 'json':
             print(json.dumps({
                 'severity': diag.severity.name,
                 'step': diag.step,
                 'msg': diag.msg,
                 'ctx': diag.ctx.path,
             }))
-        else:
+        elif self._output == 'text':
             step = f' [{diag.step}]' if diag.step else ''
             ctx = ' / '.join(f'{ty} {name}'.strip()
                              for ty, name in diag.ctx.path).strip()
@@ -168,17 +172,26 @@ class DiagnosticBase:
 
 
 class Loader(DiagnosticBase):
-    def __init__(self, root, output_json=False):
-        super().__init__(output_json)
+    def __init__(self, root, output):
+        super().__init__(output)
         self._root = root
         self._all_objects = {}
 
-    def _load_one(self, filename):
-        with filename.open() as f:
-            data = list(yaml.safe_load_all(f))
+    def _load_one(self, uri, inv):
+        try:
+            if '://' in uri:
+                fobj = urlopen(uri)
+            else:
+                fobj = open(uri)
+            with fobj as f:
+                data = list(yaml.safe_load_all(f))
+        except Exception as err:
+            self.emit(Severity.CATASTROPHIC, 'could not load yaml from '
+                      f'{uri}: {err}')
+            return
 
         # check all objects in the file
-        with self.with_context('File', filename):
+        with self.with_context('File', uri):
             for spec in data:
                 # check for required fields for all objects
                 for req in COMMON_META:
@@ -209,11 +222,38 @@ class Loader(DiagnosticBase):
                               f'in {spec!r}')
 
                 # check for duplicates
-                key = spec['name'], spec['version']
-                if key in self._all_objects.setdefault(kind, {}):
+                subdict = inv.setdefault(kind, {}).setdefault(spec['name'], {})
+                if spec['version'] in subdict:
                     self.emit(Severity.ERROR, 'duplicate spec for '
-                              f'{kind} {key}')
-                self._all_objects[kind][key] = spec
+                              f'{kind} {spec["name"]} v{spec["version"]}')
+                subdict[spec['version']] = spec
+
+    def _load_repo(self, uri):
+        uri = str(uri)
+        inv = {}
+        self._load_one(uri, inv)
+
+        # build up objects from version inventory
+        repos = inv.get('Repository', {})
+        if len(repos) != 1:
+            self.emit(Severity.CATASTROPHIC, 'did not find exactly one '
+                      f'schema repository in {uri}')
+        repos = next(iter(repos.values()))
+        if len(repos) != 1:
+            self.emit(Severity.CATASTROPHIC, 'did not find exactly one '
+                      f'schema repository in {uri}')
+        repo = next(iter(repos.values()))
+
+        for filename in repo['files']:
+            if '://' in uri:
+                parsed = urlparse(uri)
+                new_path = path.join(path.dirname(parsed.path), filename)
+                new_uri = urlunparse(parsed._replace(path=new_path))
+            else:
+                new_uri = path.join(path.dirname(uri), filename)
+            self._load_one(new_uri, self._all_objects)
+
+        return repo
 
     def _resolve(self, kind, reference):
         if isinstance(reference, dict):
@@ -244,22 +284,20 @@ class Loader(DiagnosticBase):
             self.emit(Severity.ERROR, f'invalid version {version}')
             version = 0
         try:
-            return name, self._all_objects[kind][name, version]
+            return name, self._all_objects[kind][name][version]
         except KeyError:
             self.emit(Severity.CATASTROPHIC, f'could not resolve {kind} '
                       f'reference {name}:{version}')
 
     def load(self, version):
         # resolve by version
-        if not (self._root / f'version-{version}.yaml').exists():
+        ver_root = self._root / f'version-{version}.yaml'
+        if not ver_root.exists():
             self.emit(Severity.CATASTROPHIC, 'no root yaml found for '
                       f'version {version}')
 
-        for doc in self._root.glob('*.yaml'):
-            self._load_one(doc)
+        ver = self._load_repo(ver_root)
 
-        # build up objects from version inventory
-        ver = self._all_objects['Version'][(version, 1)]  # TODO: other revs?
         inv = {}
         prop_map = {}
 
@@ -370,12 +408,13 @@ class Loader(DiagnosticBase):
 
 
 class Checker(DiagnosticBase):
-    def __init__(self, version='latest', output_json=False):
-        super().__init__(output_json)
+    def __init__(self, version, output):
+        super().__init__(output)
 
-        loader = Loader(Path(__file__).parents[1] / 'defs')
+        loader = Loader(Path(__file__).parents[1] / 'defs', output)
+        loader._diags = self._diags
         self._spec = loader.load(version)
-        if loader._diags:
+        if self._diags:
             self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
                       'validate against, exiting')
 
