@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 
 from . import DiagnosticBase, Severity
-from .loader import Loader
+from .schema import Loader
 from .visitors import VISITORS
 
 
@@ -35,10 +35,12 @@ class Checker(DiagnosticBase):
 
         loader = Loader(Path(__file__).parents[1] / 'defs', output)
         loader._diags = self._diags
-        self._inv = loader.load(version, additional)
+        loader.load(version, additional)
         if self._diags:
             self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
                       'validate against, exiting')
+
+        self._inv = loader.get_inv()
 
         # schema of params/commands by module, combined from interfaces,
         # features and systems
@@ -61,22 +63,22 @@ class Checker(DiagnosticBase):
 
     def add_parameters(self, name, params, source=None):
         self._all_pars.setdefault(name, {}).update(
-            {pname: (par, source) for (pname, par) in params.items()}
+            {par.name: (par, source) for par in params}
         )
 
     def add_commands(self, name, cmds, source=None):
         self._all_cmds.setdefault(name, {}).update(
-            {cname: (cmd, source) for (cname, cmd) in cmds.items()}
+            {cmd.name: (cmd, source) for cmd in cmds}
         )
 
     def add_mod_properties(self, name, props, source=None):
         self._all_modprops.setdefault(name, {}).update(
-            {pname: (prop, source) for (pname, prop) in props.items()}
+            {prop.name: (prop, source) for prop in props}
         )
 
     def add_acc_properties(self, name, acc, props, source=None):
         self._all_accprops.setdefault((name, acc), {}).update(
-            {pname: (prop, source) for (pname, prop) in props.items()}
+            {prop.name: (prop, source) for prop in props}
         )
 
     def get_parameters(self, name):
@@ -173,13 +175,13 @@ class Checker(DiagnosticBase):
                     self.check_datainfo(description['result'])
             return
 
-        basic = self._inv.objects['Datainfo'].get(descty)
+        basic = self._inv.get('Datainfo', descty)
         if basic is None:
             self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
             return
 
         actual_props = set(description) - {'type'}
-        for prop, propdesc in basic['members'].items():
+        for prop, propdesc in basic.members.items():
             if prop not in actual_props:
                 if not propdesc.get('optional', False):
                     self.emit(Severity.ERROR,

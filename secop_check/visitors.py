@@ -122,42 +122,40 @@ class InterfaceChecker(BaseVisitor):
     name = 'interface'
 
     def visit_module(self, name, description):
-        self.checker.add_parameters(name, self.inv.objects['Parameter'])
-        self.checker.add_commands(name, self.inv.objects['Command'])
-        self.checker.add_mod_properties(name, self.inv.prop_map['Module'])
+        self.checker.add_parameters(name, self.inv.get_global('Parameter'))
+        self.checker.add_commands(name, self.inv.get_global('Command'))
+        self.checker.add_mod_properties(name, self.inv.get_global_props('Module'))
 
         for acc, accdesc in description['accessibles'].items():
             if is_command(accdesc):
                 self.checker.add_acc_properties(
-                    name, acc, self.inv.prop_map['Command'])
+                    name, acc, self.inv.get_global_props('Command'))
             else:
                 self.checker.add_acc_properties(
-                    name, acc, self.inv.prop_map['Parameter'])
+                    name, acc, self.inv.get_global_props('Parameter'))
 
         def add_baseclass(kind, clsname):
             # kind: Interface or Feature
             if clsname.startswith('_'):
                 return
 
-            if clsname not in self.inv.objects[kind]:
+            if not self.inv.is_global(kind, clsname):
                 self.checker.emit(Severity.ERROR,
                                   f'declares unknown {kind}: {clsname}')
                 return
 
-            clsdesc = self.inv.objects[kind][clsname]
-            self.checker.add_parameters(name, clsdesc['parameters'],
+            clsdef = self.inv.get(kind, clsname)
+            self.checker.add_parameters(name, clsdef.parameters,
                                         kind + ' ' + clsname)
-            self.checker.add_commands(name, clsdesc['commands'],
+            self.checker.add_commands(name, clsdef.commands,
                                       kind + ' ' + clsname)
-            self.checker.add_mod_properties(name, clsdesc['properties'],
+            self.checker.add_mod_properties(name, clsdef.properties,
                                             kind + ' ' + clsname)
 
-            for par, pardesc in clsdesc['parameters'].items():
-                self.checker.add_acc_properties(name, par,
-                                                pardesc.get('properties', {}))
-            for cmd, cmddesc in clsdesc['commands'].items():
-                self.checker.add_acc_properties(name, cmd,
-                                                cmddesc.get('properties', {}))
+            for par in clsdef.parameters:
+                self.checker.add_acc_properties(name, par.name, par.properties)
+            for cmd in clsdef.commands:
+                self.checker.add_acc_properties(name, cmd.name, cmd.properties)
 
         for iface in description.get('interface_classes', []):
             add_baseclass('Interface', iface)
@@ -171,7 +169,7 @@ class BasePropsChecker(BaseVisitor):
     def check_props(self, description, props, skip=None):
         required = set(
             [prop for prop, (propspec, _) in props.items()
-             if not propspec.get('optional', False)]
+             if not propspec.optional]
         )
         for member, mvalue in description.items():
             if member == skip:
@@ -186,8 +184,7 @@ class BasePropsChecker(BaseVisitor):
             else:
                 # TODO: implement special "parent" dataty
                 with self.checker.with_context('Property', member):
-                    self.checker.check_dataty(props[member][0]['dataty'],
-                                              mvalue)
+                    self.checker.check_dataty(props[member][0].dataty, mvalue)
 
         if required:
             self.checker.emit(
@@ -197,8 +194,8 @@ class BasePropsChecker(BaseVisitor):
 
     def visit_secnode(self, description):
         self.check_props(description,
-                         {pname: (p, None) for (pname, p) in
-                          self.inv.prop_map['SECNode'].items()},
+                         {par.name: (par, None) for par in
+                          self.inv.get_global_props('SECNode')},
                          'modules')
 
     def visit_module(self, name, description):
@@ -223,14 +220,14 @@ class AccessibleChecker(BaseVisitor):
 
     def visit_module(self, name, description):
         for pname, (parspec, from_) in self.checker.get_parameters(name).items():
-            if from_ and not parspec.get('optional', False) and \
+            if from_ and not parspec.optional and \
                pname not in description['accessibles']:
                 self.checker.emit(
                     Severity.ERROR,
                     f'missing required parameter {pname} from {from_}'
                 )
         for cname, (cmdspec, from_) in self.checker.get_commands(name).items():
-            if from_ and not cmdspec.get('optional', False) and \
+            if from_ and not cmdspec.optional and \
                cname not in description['accessibles']:
                 self.checker.emit(
                     Severity.ERROR,
@@ -292,15 +289,14 @@ class AccessibleChecker(BaseVisitor):
             return
         should = should[0]
 
-        if description['readonly'] != should['readonly']:
-            if should['readonly']:
+        if description['readonly'] != should.readonly:
+            if should.readonly:
                 self.checker.emit(Severity.WARNING,
                                   'parameter should be readonly')
             else:
                 self.checker.emit(Severity.WARNING,
                                   'parameter should not be readonly')
-        self.check_datainfo_template(should['datainfo'],
-                                     description['datainfo'])
+        self.check_datainfo_template(should.datainfo, description['datainfo'])
 
     def visit_command(self, modname, name, description):
         should = self.checker.get_commands(modname).get(name)
@@ -314,27 +310,27 @@ class AccessibleChecker(BaseVisitor):
         should = should[0]
 
         if 'argument' in description['datainfo']:
-            if should['argument'] == 'none':
+            if should.argument == 'none':
                 self.checker.emit(Severity.WARNING,
                                   'command should not have an argument')
             else:
                 self.check_datainfo_template(
-                    should['argument'], description['datainfo']['argument'])
+                    should.argument, description['datainfo']['argument'])
         else:
-            if should['argument'] != 'none':
+            if should.argument != 'none':
                 self.checker.emit(Severity.WARNING,
                                   'command should have an argument: '
                                   f'{should["argument"]}')
 
         if 'result' in description['datainfo']:
-            if should['result'] == 'none':
+            if should.result == 'none':
                 self.checker.emit(Severity.WARNING,
                                   'command should not have an result')
             else:
                 self.check_datainfo_template(
-                    should['result'], description['datainfo']['result'])
+                    should.result, description['datainfo']['result'])
         else:
-            if should['result'] != 'none':
+            if should.result != 'none':
                 self.checker.emit(Severity.WARNING,
                                   'command should have an result: '
                                   f'{should["result"]}')
