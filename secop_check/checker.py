@@ -48,6 +48,9 @@ class Checker(DiagnosticBase):
         # combined schema of properties by (module, accessible)
         self._all_accprops = {}
 
+    def get_diags(self):
+        return self._diags
+
     def check(self, desc: str):
         try:
             desc = json.loads(desc)

@@ -7,7 +7,7 @@ from flask import Flask, render_template, request
 
 sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
 
-import secop_check
+import secop_check.checker
 
 app = Flask('SECoPCheck', root_path=str(Path(__file__).absolute().parent))
 
@@ -19,12 +19,14 @@ def initial():
 
 @app.post("/check")
 def check():
-    checker = secop_check.Checker(version="1.0", output_json=True)
+    checker = secop_check.checker.Checker(version="1.0",
+                                          additional=[],
+                                          output='none')
     try:
         checker.check(request.form['inputBox'])
     except secop_check.Catastrophe:
         pass
-    return render_template('partial/report.html', errors=checker._diags)
+    return render_template('partial/report.html', errors=checker.get_diags())
 
 
 if __name__ == '__main__':

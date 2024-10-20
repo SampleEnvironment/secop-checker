@@ -1,5 +1,10 @@
 <div class="errors-div" id=errors-div>
 {% for err in errors %}
-    <div class="diag diag-{{ err.severity.name.lower()  }}"> {{ err.msg }} </div>
+    <div class="diag diag-{{ err.severity.name.lower()  }}">
+      {% for entry in err.ctx.path %}
+        {{ entry[0] }} {{ entry[1] }}
+        {% if not loop.last %}/{% else %}:{% endif %}
+      {% endfor %}
+      {{ err.msg }} </div>
 {% endfor %}
 </div>
