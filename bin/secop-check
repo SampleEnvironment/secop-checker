@@ -30,7 +30,7 @@ from pathlib import Path
 # Add import path for inplace usage
 sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
 
-import secop_check
+import secop_check.checker
 
 
 def parse_args(argv):
@@ -75,9 +75,9 @@ else:
         desc = f.read()
 
 try:
-    checker = secop_check.Checker(args.version,
-                                  args.schema,
-                                  'json' if args.json else 'text')
+    checker = secop_check.checker.Checker(args.version,
+                                          args.schema,
+                                          'json' if args.json else 'text')
     checker.check(desc)
 except secop_check.Catastrophe:
     sys.exit(1)

@@ -1,0 +1,349 @@
+# *****************************************************************************
+# Copyright (c) 2024-2024 by the authors, see LICENSE
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# Module authors:
+#   Alexander Zaft <a.zaft@fz-juelich.de>
+#   Georg Brandl <g.brandl@fz-juelich.de>
+#
+# *****************************************************************************
+
+import re
+
+from . import Severity
+
+
+def is_command(desc):
+    datainfo = desc.get('datainfo', {})
+    return datainfo.get('type') == 'command'
+
+
+class BaseVisitor:
+    name = ''
+
+    def __init__(self, checker):
+        self.checker = checker
+        self.inv = checker._inv
+
+    def visit_property(self, nodekind, name, description):
+        """Visiting properties of any node."""
+
+    def visit_secnode(self, description):
+        """Visiting the root SECNode element."""
+
+    def visit_module(self, name, description):
+        """Visiting each module of a SECnode."""
+
+    def visit_parameter(self, modname, name, description):
+        """Visiting each accessible of a module."""
+
+    def visit_command(self, modname, name, description):
+        """Visiting each accessible of a module."""
+
+    def finish_accessible(self, description):
+        """Called after all subelements of an accessible."""
+
+    def finish_module(self, name):
+        """Called after all subelements of a module."""
+
+    def finish(self):
+        """Called after all elements are processed."""
+
+
+class BasicStructureChecker(BaseVisitor):
+    """Checks for basic structure of the descriptive data.
+
+    It should fail with CATASTROPHIC errors because further checkers probably
+    will raise a lot of KeyErrors.
+    """
+    name = 'structure'
+
+    def visit_secnode(self, description):
+        if 'modules' not in description:
+            self.checker.emit(Severity.ERROR, 'missing modules dict')
+            description['modules'] = {}
+
+    def visit_module(self, name, description):
+        if 'accessibles' not in description:
+            self.checker.emit(Severity.ERROR,
+                              'missing dict of module accessibles')
+            description['accessibles'] = {}
+
+
+class NameChecker(BaseVisitor):
+    """Checks that names conform to the required format."""
+    name = 'names'
+
+    _mod = re.compile(r'^[a-zA-Z]\w{0,62}$')
+    _ident = re.compile(r'^[_a-zA-Z]\w{0,62}$')
+
+    def visit_module(self, name, description):
+        if not self._mod.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required module name format')
+
+    def visit_parameter(self, modname, name, description):
+        if not self._ident.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required parameter name format')
+
+    def visit_command(self, modname, name, description):
+        if not self._ident.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required command name format')
+
+    def visit_property(self, nodekind, name, description):
+        if not self._ident.match(name):
+            self.checker.emit(Severity.ERROR,
+                              'does not match required property name format')
+
+
+class InterfaceChecker(BaseVisitor):
+    """Checks that all declared interfaces exist.
+
+    Also populates the allowed parameters, commands and properties for modules
+    and parameters/commands from all declared interfaces and features.
+
+    TODO: systems
+    """
+    name = 'interface'
+
+    def visit_module(self, name, description):
+        self.checker.add_parameters(name, self.inv.objects['Parameter'])
+        self.checker.add_commands(name, self.inv.objects['Command'])
+        self.checker.add_mod_properties(name, self.inv.prop_map['Module'])
+
+        for acc, accdesc in description['accessibles'].items():
+            if is_command(accdesc):
+                self.checker.add_acc_properties(
+                    name, acc, self.inv.prop_map['Command'])
+            else:
+                self.checker.add_acc_properties(
+                    name, acc, self.inv.prop_map['Parameter'])
+
+        def add_baseclass(kind, clsname):
+            # kind: Interface or Feature
+            if clsname.startswith('_'):
+                return
+
+            if clsname not in self.inv.objects[kind]:
+                self.checker.emit(Severity.ERROR,
+                                  f'declares unknown {kind}: {clsname}')
+                return
+
+            clsdesc = self.inv.objects[kind][clsname]
+            self.checker.add_parameters(name, clsdesc['parameters'],
+                                        kind + ' ' + clsname)
+            self.checker.add_commands(name, clsdesc['commands'],
+                                      kind + ' ' + clsname)
+            self.checker.add_mod_properties(name, clsdesc['properties'],
+                                            kind + ' ' + clsname)
+
+            for par, pardesc in clsdesc['parameters'].items():
+                self.checker.add_acc_properties(name, par,
+                                                pardesc.get('properties', {}))
+            for cmd, cmddesc in clsdesc['commands'].items():
+                self.checker.add_acc_properties(name, cmd,
+                                                cmddesc.get('properties', {}))
+
+        for iface in description.get('interface_classes', []):
+            add_baseclass('Interface', iface)
+        for feat in description.get('features', []):
+            add_baseclass('Feature', feat)
+
+
+class BasePropsChecker(BaseVisitor):
+    name = 'properties-basic'
+
+    def check_props(self, description, props, skip=None):
+        required = set(
+            [prop for prop, (propspec, _) in props.items()
+             if not propspec.get('optional', False)]
+        )
+        for member, mvalue in description.items():
+            if member == skip:
+                continue
+            required.discard(member)
+            if member not in props:
+                if not member.startswith('_'):
+                    self.checker.emit(
+                        Severity.WARNING,
+                        f'{member}: non-standard properties need \'_\' as a prefix'
+                    )
+            else:
+                # TODO: implement special "parent" dataty
+                with self.checker.with_context('Property', member):
+                    self.checker.check_dataty(props[member][0]['dataty'],
+                                              mvalue)
+
+        if required:
+            self.checker.emit(
+                Severity.ERROR,
+                f'missing required properties: {required}'
+            )
+
+    def visit_secnode(self, description):
+        self.check_props(description,
+                         {pname: (p, None) for (pname, p) in
+                          self.inv.prop_map['SECNode'].items()},
+                         'modules')
+
+    def visit_module(self, name, description):
+        self.check_props(description,
+                         self.checker.get_mod_properties(name),
+                         'accessibles')
+
+    def visit_parameter(self, modname, name, description):
+        self.check_props(description,
+                         self.checker.get_acc_properties(modname, name))
+
+    def visit_command(self, modname, name, description):
+        self.check_props(description,
+                         self.checker.get_acc_properties(modname, name))
+
+
+class AccessibleChecker(BaseVisitor):
+    """Checks that modules have all accessibles required by their
+    interfaces/features and that accessibles match the spec.
+    """
+    name = 'accessibles'
+
+    def visit_module(self, name, description):
+        for pname, (parspec, from_) in self.checker.get_parameters(name).items():
+            if from_ and not parspec.get('optional', False) and \
+               pname not in description['accessibles']:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'missing required parameter {pname} from {from_}'
+                )
+        for cname, (cmdspec, from_) in self.checker.get_commands(name).items():
+            if from_ and not cmdspec.get('optional', False) and \
+               cname not in description['accessibles']:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'missing required command {cname} from {from_}'
+                )
+
+    def check_datainfo_template(self, should, actual):
+        """Check if a prescribed datainfo matches the actual datainfo.
+
+        Does not check the datainfo itself for validity, this was done in
+        BasePropsChecker.
+        """
+        if should == 'any':
+            return
+        if isinstance(should, str):
+            should = {'type': should}
+
+        for key, kval in should.items():
+            aval = actual.get(key, '<nothing>')
+            if should['type'] == 'array' and key == 'members':
+                self.check_datainfo_template(kval, aval)
+            elif should['type'] == 'tuple' and key == 'members':
+                for i, (kval_item, aval_item) in enumerate(zip(kval, aval)):
+                    self.check_datainfo_template(kval_item, aval_item)
+            elif should['type'] == 'struct' and key == 'members':
+                for kval_key, kval_item in kval.items():
+                    if kval_key not in aval:
+                        self.checker.emit(Severity.ERROR,
+                                          f'missing struct member {kval_key}')
+                    else:
+                        self.check_datainfo_template(kval_item, aval[kval_key])
+            elif key == 'type':
+                # handle special cases
+                if kval == 'any':
+                    aval = kval
+                elif kval == 'number' and aval in ('double', 'scaled', 'int'):
+                    aval = kval
+                elif kval == 'double' and aval == 'scaled':
+                    aval = kval
+
+                if kval != aval:
+                    self.checker.emit(Severity.ERROR,
+                                      f'expected datainfo {key} {kval}, '
+                                      f'got {aval!r}')
+            else:
+                if kval != aval:
+                    self.checker.emit(Severity.ERROR,
+                                      f'expected datainfo {key} {kval}, '
+                                      f'got {aval!r}')
+
+    def visit_parameter(self, modname, name, description):
+        should = self.checker.get_parameters(modname).get(name)
+        if should is None:
+            if not name.startswith('_'):
+                self.checker.emit(
+                    Severity.WARNING,
+                    'non-standard parameters need \'_\' as a prefix'
+                )
+            return
+        should = should[0]
+
+        if description['readonly'] != should['readonly']:
+            if should['readonly']:
+                self.checker.emit(Severity.WARNING,
+                                  'parameter should be readonly')
+            else:
+                self.checker.emit(Severity.WARNING,
+                                  'parameter should not be readonly')
+        self.check_datainfo_template(should['datainfo'],
+                                     description['datainfo'])
+
+    def visit_command(self, modname, name, description):
+        should = self.checker.get_commands(modname).get(name)
+        if should is None:
+            if not name.startswith('_'):
+                self.checker.emit(
+                    Severity.WARNING,
+                    'non-standard commands need \'_\' as a prefix'
+                )
+            return
+        should = should[0]
+
+        if 'argument' in description['datainfo']:
+            if should['argument'] == 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should not have an argument')
+            else:
+                self.check_datainfo_template(
+                    should['argument'], description['datainfo']['argument'])
+        else:
+            if should['argument'] != 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should have an argument: '
+                                  f'{should["argument"]}')
+
+        if 'result' in description['datainfo']:
+            if should['result'] == 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should not have an result')
+            else:
+                self.check_datainfo_template(
+                    should['result'], description['datainfo']['result'])
+        else:
+            if should['result'] != 'none':
+                self.checker.emit(Severity.WARNING,
+                                  'command should have an result: '
+                                  f'{should["result"]}')
+
+
+VISITORS = [
+    BasicStructureChecker,
+    NameChecker,
+    InterfaceChecker,
+    BasePropsChecker,
+    AccessibleChecker,
+]
