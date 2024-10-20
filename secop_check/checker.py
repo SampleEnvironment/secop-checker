@@ -33,14 +33,11 @@ class Checker(DiagnosticBase):
     def __init__(self, version, additional, output):
         super().__init__(output)
 
-        loader = Loader(Path(__file__).parents[1] / 'defs', output)
-        loader._diags = self._diags
-        loader.load(version, additional)
-        if self._diags:
-            self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
-                      'validate against, exiting')
+        self.loader = Loader(Path(__file__).parents[1] / 'defs', output)
+        self.loader._diags = self._diags
+        self.loader.load(version, additional)
 
-        self._inv = loader.get_inv()
+        self._inv = self.loader.get_inv()
 
         # schema of params/commands by module, combined from interfaces,
         # features and systems
@@ -57,7 +54,14 @@ class Checker(DiagnosticBase):
         except json.JSONDecodeError as e:
             self.emit(Severity.CATASTROPHIC, f'invalid json at line {e.lineno}'
                       f' column {e.colno}:\n{e.msg}')
-        # TODO: add mechanism to add additional yaml repos from desc here
+
+        schemata = desc.get('schemata', {})
+        for uri in schemata:
+            self.loader.load_repo(uri)
+
+        if self._diags:
+            self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
+                      'validate against, exiting')
 
         self.visit_descriptive_data(desc)
 

@@ -169,6 +169,7 @@ class Inventory:
                 name in self._global.get(kind, {})]
 
     def get_global_props(self, kind):
+        # TODO: multiple versions
         return [self._all_objects['Property'][name][0] for
                 name in self._global_props.get(kind, {})]
 
