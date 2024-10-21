@@ -23,6 +23,7 @@ modules:
       # defines a required value.
       - quantity:
           definition: quantity:1
+          # TODO: validate forced values
           description: Must be set to "current".
     parameters:
       # This parameter is already defined by Drivable, but the required
