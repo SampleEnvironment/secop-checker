@@ -166,6 +166,7 @@ class Checker(DiagnosticBase):
         """Check validity of a datainfo description."""
         if not description:
             self.emit(Severity.ERROR, 'datainfo is empty')
+            return
         if 'type' not in description:
             self.emit(Severity.ERROR, 'datainfo does not have a type')
             description['type'] = 'unknown'
