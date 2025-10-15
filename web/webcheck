@@ -12,6 +12,10 @@ import secop_check.checker
 app = Flask('SECoPCheck', root_path=str(Path(__file__).absolute().parent))
 
 
+def fmt_err(err):
+    return "SECNode" + " > ".join(map(lambda t: t[1], err.ctx.path))
+
+
 @app.route("/")
 def initial():
     return render_template('index.html')
@@ -22,11 +26,16 @@ def check():
     checker = secop_check.checker.Checker(version="1.0",
                                           additional=[],
                                           output='none')
+    text = request.form['inputBox']
+    if not text:
+        return '<div class="errors-div" id="errors-div" data-x="initial"></div>'
     try:
-        checker.check(request.form['inputBox'])
+        checker.check(text)
     except secop_check.Catastrophe:
         pass
-    return render_template('partial/report.html', errors=checker.get_diags())
+    if not checker._diags:
+        return render_template('partial/ok.html')
+    return render_template('partial/report.html', errors=checker.get_diags(), fmt_err=fmt_err)
 
 
 if __name__ == '__main__':
