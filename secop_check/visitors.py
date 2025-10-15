@@ -156,6 +156,8 @@ class InterfaceChecker(BaseVisitor):
                 self.checker.add_acc_properties(name, par.name, par.properties)
             for cmd in clsdef.commands:
                 self.checker.add_acc_properties(name, cmd.name, cmd.properties)
+            if kind == 'Interface' and clsdef.base is not None:
+                add_baseclass('Interface', clsdef.base.name)
 
         for iface in description.get('interface_classes', []):
             add_baseclass('Interface', iface)
