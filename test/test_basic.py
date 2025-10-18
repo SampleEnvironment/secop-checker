@@ -33,7 +33,7 @@ json_files = [p.name for p in datadir.glob('*.json')]
 
 @pytest.mark.parametrize('json', json_files)
 def test_frappy_json(json):
-    checker = Checker('1.0', [], output='text')
+    checker = Checker('1.1', [], output='text')
     content = (datadir / json).read_text()
     checker.check(content)
 

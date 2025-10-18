@@ -164,3 +164,32 @@ members:
       type: array
       members: string
     optional: true
+
+---
+kind: Datainfo
+name: matrix
+version: 2
+description: Binary n-dimensional arrays.
+dataty:
+  type: struct
+  members:
+    len:
+      dataty:
+        type: array
+        members: int
+    blob:
+      dataty: string
+members:
+  names:
+    dataty:
+      type: array
+      members: string
+  maxlen:
+    dataty:
+      type: array
+      members: int
+  elementtype:
+    dataty: string
+  compression:
+    dataty: string
+    optional: true
