@@ -126,7 +126,19 @@ class Checker(DiagnosticBase):
         elif description == 'datainfo':
             self.check_datainfo(actual)
             matches = True  # check_datainfo will emit errors
+        elif isinstance(description, dict) and description['type'] == 'int':
+            mini = description.get('min', -float('inf'))
+            maxi = description.get('max', float('inf'))
+            expected = f'int in [{mini}, {maxi}]'
+            matches = (isinstance(actual, int) or
+                       (isinstance(actual, float) and
+                        actual.is_integer())) and mini <= actual <= maxi
+        elif isinstance(description, dict) and description['type'] == 'oneof':
+            expected = f'any of {", ".join(description["values"])}'
+            matches = isinstance(actual, str) and \
+                any(actual == v for v in description['values'])
         elif isinstance(description, dict) and description['type'] == 'array':
+            # TODO: the expected description sucks
             expected = f'array of {description["members"]}'
             matches = isinstance(actual, list) and \
                 all(self.check_dataty(description['members'], v, quiet=True)
