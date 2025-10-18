@@ -39,6 +39,7 @@ COMMON_META = {'kind', 'name', 'version', 'description'}
 class Property:
     name: str
     version: int
+    link: str
     description: str
     dataty: object
     optional: bool
@@ -47,6 +48,8 @@ class Property:
 @dataclass
 class Datainfo:
     name: str
+    version: int
+    link: str
     description: str
     dataty: object
     members: dict[str, Property]
@@ -56,6 +59,7 @@ class Datainfo:
 class Parameter:
     name: str
     version: int
+    link: str
     description: str
     datainfo: Datainfo
     readonly: bool
@@ -67,6 +71,7 @@ class Parameter:
 class Command:
     name: str
     version: int
+    link: str
     description: str
     argument: Datainfo | None
     result: Datainfo | None
@@ -78,6 +83,7 @@ class Command:
 class Interface:
     name: str
     version: int
+    link: str
     description: str
     base: Optional['Interface']
     parameters: list[Parameter]
@@ -89,6 +95,7 @@ class Interface:
 class Feature:
     name: str
     version: int
+    link: str
     description: str
     parameters: list[Parameter]
     commands: list[Command]
@@ -99,6 +106,7 @@ class Feature:
 class System:
     name: str
     version: int
+    link: str
     description: str
     base: Optional['System']
     modules: dict[str, Interface]
@@ -118,6 +126,7 @@ class Properties:
 class Repository:
     name: str
     version: int
+    link: str
     description: str
     files: list[str]
     systems: list[System]
@@ -329,6 +338,7 @@ class Converter:
         repo = Repository(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             files=self._get(data, 'files', list),
             systems=[self._resolve('System', x)
@@ -393,6 +403,7 @@ class Converter:
         return System(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             base=self._resolve('System', base) if base else None,
             modules=modules,
@@ -404,6 +415,7 @@ class Converter:
         return Interface(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             base=self._resolve('Interface', base) if base else None,
             parameters=[self._resolve('Parameter', x)
@@ -418,6 +430,7 @@ class Converter:
         return Feature(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             parameters=[self._resolve('Parameter', x)
                         for x in self._get(data, 'parameters', list, [])],
@@ -431,6 +444,7 @@ class Converter:
         return Parameter(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             datainfo=self._get(data, 'datainfo', ref),
             readonly=self._get(data, 'readonly', bool, False),
@@ -443,6 +457,7 @@ class Converter:
         return Command(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             argument=self._get(data, 'argument', ref),
             result=self._get(data, 'result', ref),
@@ -455,6 +470,7 @@ class Converter:
         return Property(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             dataty=self._get(data, 'dataty', ref),
             optional=self._get(data, 'optional', bool, False),
@@ -463,6 +479,8 @@ class Converter:
     def _mk_datainfo(self, data):
         return Datainfo(
             name=self._get(data, 'name', str),
+            version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             dataty=self._get(data, 'dataty', ref),
             members=self._get(data, 'members', dict),
