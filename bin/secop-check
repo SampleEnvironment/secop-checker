@@ -40,8 +40,8 @@ def parse_args(argv):
     parser.add_argument('--json', action='store_true', help='output json')
     parser.add_argument('--version',
                         # TODO: other source
-                        choices=['latest', '1.0', '1.1'],
-                        default='1.0',
+                        choices=['latest', '1.0', '1.1', '2.0'],
+                        default='2.0',
                         # no {default} syntax :/
                         help='version to check against (default: %(default)s)')
     parser.add_argument('--schema', action='append', default=[],
@@ -64,6 +64,7 @@ if ':' in args.infile:
             sf.write('describe\n')
             sf.flush()
             idn = sf.readline()
+            args.version = idn.strip().split(',')[-1].strip('vV')
             desc = sf.readline()
 
 elif args.infile == '-':
