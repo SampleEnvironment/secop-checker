@@ -52,6 +52,9 @@ class Checker(DiagnosticBase):
         return self._diags
 
     def check(self, desc: str):
+        # for simplicity, allow a "describing" SECoP reply
+        if desc.startswith('describing . '):
+            desc = desc[len('describing . '):]
         try:
             desc = json.loads(desc)
         except json.JSONDecodeError as e:

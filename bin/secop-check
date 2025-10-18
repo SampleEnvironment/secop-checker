@@ -65,7 +65,6 @@ if ':' in args.infile:
             sf.flush()
             idn = sf.readline()
             desc = sf.readline()
-            desc = desc[desc.index('{'):]   # TODO: validate better
 
 elif args.infile == '-':
     desc = sys.stdin.read()
