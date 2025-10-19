@@ -33,7 +33,7 @@ class Dataty:
         self.__dict__.update(kwds)
 
     @staticmethod
-    def from_yaml(dct: str | dict[str, Any]) -> Dataty:  # noqa: PLR0911
+    def from_desc(dct: str | dict[str, Any]) -> Dataty:  # noqa: PLR0911
         if isinstance(dct, str):
             dct = {'type': dct}
         type_ = dct.get('type')
@@ -59,6 +59,8 @@ class Dataty:
             return Struct(dct)
         if type_ == 'oneof':
             return OneOf(dct)
+        if type_ == 'enum':
+            return OneOfEnum(dct)
         if type_ == 'parent':
             return Parent()
         raise ValueError
@@ -144,7 +146,7 @@ class Array(Dataty):
 
     def __init__(self, dct: dict[str, Any]) -> None:
         if 'members' in dct:
-            self.itemtype = Dataty.from_yaml(dct['members'])
+            self.itemtype = Dataty.from_desc(dct['members'])
 
     def validate(self, value: object) -> bool:
         if not isinstance(value, list):
@@ -164,7 +166,7 @@ class Tuple(Dataty):
 
     def __init__(self, dct: dict[str, Any]) -> None:
         if 'members' in dct:
-            self.itemtypes = [Dataty.from_yaml(item) for item in dct['members']]
+            self.itemtypes = [Dataty.from_desc(item) for item in dct['members']]
 
     def validate(self, value: object) -> bool:
         if not isinstance(value, list):
@@ -191,9 +193,9 @@ class Struct(Dataty):
     def __init__(self, dct: dict[str, Any]) -> None:
         if 'members' in dct:
             if isinstance(dct['members'], str):
-                self.fieldtype = Dataty.from_yaml(dct['members'])
+                self.fieldtype = Dataty.from_desc(dct['members'])
             else:
-                self.fieldtypes = {key: Dataty.from_yaml(val)
+                self.fieldtypes = {key: Dataty.from_desc(val)
                                    for key, val in dct['members'].items()}
         self.optional = dct.get('optional', [])
 
@@ -238,9 +240,23 @@ class OneOf(Dataty):
         return 'one of: ' + ', '.join(self.values)
 
 
+class OneOfEnum(Dataty):
+    values: list[int]
+
+    def __init__(self, dct: dict[str, Any]) -> None:
+        self.values = [int(item) for item in dct['members'].values()]
+
+    def validate(self, value: object) -> bool:
+        return isinstance(value, int) and value in self.values
+
+    def describe(self) -> str:
+        return 'one of [' + ', '.join(map(str, self.values)) + ']'
+
+
 class Datainfo(Dataty):
     def validate(self, value: object) -> bool:
-        return True  # TODO
+        # more checks in Checker.check_datainfo
+        return isinstance(value, dict)
 
     def describe(self) -> str:
         return 'datainfo'
@@ -248,7 +264,8 @@ class Datainfo(Dataty):
 
 class Parent(Dataty):
     def validate(self, value: object) -> bool:
-        return True  # TODO
+        # this is a special case and needs to be checked somewhere else
+        return True
 
     def describe(self) -> str:
         return 'type of parent element'

@@ -27,6 +27,7 @@ import re
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from . import Severity
+from .dataty import Dataty
 from .schema import Command, Feature, Interface, Module, Parameter, SECNode
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ desc_dict = dict[str, Any]
 # ruff: noqa: ARG002
 
 class BaseVisitor:
+    checker: Checker
     name = ''
 
     def __init__(self, checker: Checker) -> None:
@@ -203,7 +205,6 @@ class BasePropsChecker(BaseVisitor):
                         f"{member}: non-standard properties need '_' as a prefix",
                     )
             else:
-                # TODO: implement special "parent" dataty
                 with self.checker.with_context('Property', member):
                     self.checker.check_dataty(props[member][0].dataty, mvalue)
 
@@ -273,7 +274,11 @@ class AccessibleChecker(BaseVisitor):
             should = {'type': should}
 
         for key, kval in should.items():
-            aval = actual.get(key, '<nothing>')
+            aval = actual.get(key)
+            if aval is None:
+                self.checker.emit(Severity.ERROR,
+                                  f'missing required datainfo key {key}')
+                continue
             if should['type'] == 'array' and key == 'members':
                 self.check_datainfo_template(kval, aval)
             elif should['type'] == 'tuple' and key == 'members':
@@ -314,6 +319,19 @@ class AccessibleChecker(BaseVisitor):
                 )
             return
         should = should_src[0]
+
+        # special case: check "constant" parameter value
+        if 'constant' in description:
+            if not description.get('readonly'):
+                self.checker.emit(Severity.WARNING,
+                                  'constant parameters should be readonly')
+            with self.checker.with_context('constant value', ''):
+                try:
+                    ty = Dataty.from_desc(description['datainfo'])
+                except ValueError:
+                    pass  # datainfo field has been checked elsewhere
+                else:
+                    self.checker.check_dataty(ty, description['constant'])
 
         if description['readonly'] != should.readonly:
             if should.readonly:

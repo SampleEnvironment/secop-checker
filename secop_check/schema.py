@@ -364,7 +364,7 @@ class Converter:
     def _get_dataty(self, data: desc_dict, key: str) -> Dataty:
         if spec := data.get(key):
             try:
-                return Dataty.from_yaml(spec)
+                return Dataty.from_desc(spec)
             except ValueError:
                 self.loader.emit_catastrophic(
                     f'invalid dataty specification for {key!r}: {spec!r}')

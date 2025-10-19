@@ -25,9 +25,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Union, cast
 
 from . import DiagnosticBase, Severity
+from .dataty import Datainfo as DatatyDatainfo
 from .schema import Command, Datainfo, Inventory, Loader, Parameter, Property
 from .visitors import VISITORS, BaseVisitor
 
@@ -116,14 +117,12 @@ class Checker(DiagnosticBase):
                            ) -> dict[str, tuple[Property, source]]:
         return self._all_accprops.get((name, acc), {})
 
-    def check_dataty(self, dataty: Dataty, actual: object) -> bool:
-            # self.emit_catastrophic('unknown dataty given in spec: '
-            #                        f'{description}')
-        matches = dataty.validate(actual)
-        if not matches:
+    def check_dataty(self, dataty: Dataty, actual: object) -> None:
+        if not dataty.validate(actual):
             self.emit(Severity.ERROR,
                       f'expected {dataty.describe()}, got {actual!r}')
-        return matches
+        if isinstance(dataty, DatatyDatainfo):
+            self.check_datainfo(cast('dict', actual))
 
     def check_datainfo(self, description: desc_dict) -> None:
         """Check validity of a datainfo description."""
