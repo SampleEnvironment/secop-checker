@@ -145,7 +145,6 @@ name: meaning
 version: 2
 dataty:
   type: struct
-  # TODO more members
   members:
     function:
       type: oneof

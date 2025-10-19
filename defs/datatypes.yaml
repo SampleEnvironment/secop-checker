@@ -174,11 +174,9 @@ dataty:
   type: struct
   members:
     len:
-      dataty:
-        type: array
-        members: int
-    blob:
-      dataty: string
+      type: array
+      members: int
+    blob: string
 members:
   names:
     dataty:
