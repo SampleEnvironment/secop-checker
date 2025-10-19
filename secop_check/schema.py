@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 import yaml
 
 from . import DiagnosticBase, Severity
+from .dataty import Dataty
 
 COMMON_META = {'kind', 'name', 'version', 'description'}
 
@@ -53,14 +54,21 @@ V = TypeVar('V')
 
 @dataclass
 class Property(Entity):
-    dataty: dict[str, Any]
+    dataty: Dataty
     optional: bool
 
 
 @dataclass
+class DatainfoMember:  # not an Entity!
+    dataty: Dataty
+    optional: bool
+    default: Any
+
+
+@dataclass
 class Datainfo(Entity):
-    dataty: dict[str, Any]
-    members: dict[str, dict[str, Any]]
+    dataty: Dataty
+    members: dict[str, DatainfoMember]
 
 
 @dataclass
@@ -353,15 +361,13 @@ class Converter:
         self.loader.emit_catastrophic(f'missing key {key!r}')
         return None
 
-    def _get_dataty(self, data: desc_dict, key: str) -> dict[str, Any]:
+    def _get_dataty(self, data: desc_dict, key: str) -> Dataty:
         if spec := data.get(key):
-            if isinstance(spec, dict):
-                return spec
-            if isinstance(spec, str):
-                return {'type': spec}
-            self.loader.emit_catastrophic(
-                f'expected dataty to be of type dict or str, but '
-                f'got {type(data[key])}')
+            try:
+                return Dataty.from_yaml(spec)
+            except ValueError:
+                self.loader.emit_catastrophic(
+                    f'invalid dataty specification for {key!r}: {spec!r}')
         self.loader.emit_catastrophic(f'missing key {key!r}')
         return None
 
@@ -516,10 +522,11 @@ class Converter:
             description=self._get(data, 'description', str),
             dataty=self._get_dataty(data, 'dataty'),
             members={
-                name: {
-                    'dataty': self._get_dataty(x, 'dataty'),
-                    'optional': self._get(x, 'optional', bool, default=False),
-                }
+                name: DatainfoMember(
+                    dataty=self._get_dataty(x, 'dataty'),
+                    optional=self._get(x, 'optional', bool, default=False),
+                    default=self._get(x, 'default', object, default=None),
+                )
                 for (name, x) in members.items()
             },
         )

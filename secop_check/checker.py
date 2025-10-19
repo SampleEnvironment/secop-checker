@@ -25,11 +25,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from . import DiagnosticBase, Severity
 from .schema import Command, Datainfo, Inventory, Loader, Parameter, Property
 from .visitors import VISITORS, BaseVisitor
+
+if TYPE_CHECKING:
+    from .dataty import Dataty
 
 desc_dict = dict[str, Any]
 source = Union[str, None]
@@ -113,109 +116,13 @@ class Checker(DiagnosticBase):
                            ) -> dict[str, tuple[Property, source]]:
         return self._all_accprops.get((name, acc), {})
 
-    def _fixup_dataty(self, s: str | dict) -> dict:
-        if isinstance(s, str):
-            return {'type': s}
-        return s
-
-    def _check_dataty_struct(self, description: dict[str, Any],
-                             actual: object) -> tuple[str, bool]:
-        expected = 'struct'
-        members = description.get('members')
-        if members is None:
-            # just check for object, without further details
-            matches = isinstance(actual, dict)
-        elif isinstance(members, str):
-            # TODO: the expected description sucks
-            expected = f'struct with str names and {members} values'
-            matches = isinstance(actual, dict) and \
-                all(isinstance(k, str) for k in actual) and \
-                all(self.check_dataty({'type': members}, v, quiet=True)
-                    for v in actual.values())
-        else:
-            # TODO: the expected description sucks
-            expected = 'struct with ' + ', '.join(
-                f'{k}: {v}' for k, v in members.items())
-            optional = description.get('optional', [])
-            matches = isinstance(actual, dict) and \
-                all((k not in actual and k in optional) or
-                    (k in actual and
-                     self.check_dataty(self._fixup_dataty(members[k]),
-                                       actual[k], quiet=True))
-                    for k in members)
-        return expected, matches
-
-    def _check_dataty_tuple(self, description: dict[str, Any],
-                            actual: object) -> tuple[str, bool]:
-        members = description.get('members')
-        expected = 'tuple'
-        if members is None:
-            # just check for array, without further details
-            matches = isinstance(actual, list)
-        else:
-            # TODO: the expected description sucks
-            expected = 'array of ' + ', '.join(map(str, members))
-            matches = isinstance(actual, list) and \
-                len(actual) == len(members) and \
-                all(self.check_dataty(self._fixup_dataty(desc), v,
-                                      quiet=True)
-                    for desc, v in zip(members, actual))
-        return expected, matches
-
-    def check_dataty(self, description: dict[str, Any], actual: object, *,
-                     quiet: bool = False) -> bool:
-        matches = False
-        descty = expected = description['type']
-        if descty == 'any':
-            matches = True
-        elif descty == 'number':
-            matches = isinstance(actual, (int, float))
-        elif descty == 'double':
-            matches = isinstance(actual, float)
-        elif descty == 'int':
-            is_int = isinstance(actual, int) or \
-                (isinstance(actual, float) and actual.is_integer())
-            mini = description.get('min', -float('inf'))
-            maxi = description.get('max', float('inf'))
-            if 'min' in description or 'max' in description:
-                expected = f'int in [{mini}, {maxi}]'
-            matches = is_int and mini <= actual <= maxi
-        elif descty == 'string':
-            matches = isinstance(actual, str)
-        elif descty == 'bool':
-            matches = isinstance(actual, bool)
-        elif descty == 'array':
-            members = description.get('members')
-            if members is None:
-                matches = isinstance(actual, list)
-            else:
-                # TODO: the expected description sucks
-                expected = f'array of {members}'
-                matches = isinstance(actual, list) and \
-                    all(self.check_dataty(self._fixup_dataty(members), v,
-                                          quiet=True)
-                        for v in actual)
-        elif descty == 'tuple':
-            expected, matches = self._check_dataty_tuple(description, actual)
-        elif descty == 'struct':
-            expected, matches = self._check_dataty_struct(description, actual)
-        elif descty == 'datainfo':
-            if isinstance(actual, dict):
-                self.check_datainfo(actual)
-                matches = True  # check_datainfo will emit errors
-            else:
-                matches = False
-        elif descty == 'oneof':
-            values = description['values']
-            expected = f'any of {", ".join(values)}'
-            matches = isinstance(actual, str) and actual in values
-        else:
-            self.emit_catastrophic('unknown dataty given in spec: '
-                                   f'{description}')
-
-        if not matches and not quiet:
+    def check_dataty(self, dataty: Dataty, actual: object) -> bool:
+            # self.emit_catastrophic('unknown dataty given in spec: '
+            #                        f'{description}')
+        matches = dataty.validate(actual)
+        if not matches:
             self.emit(Severity.ERROR,
-                      f'expected {expected}, got {actual!r}')
+                      f'expected {dataty.describe()}, got {actual!r}')
         return matches
 
     def check_datainfo(self, description: desc_dict) -> None:
@@ -247,13 +154,13 @@ class Checker(DiagnosticBase):
         actual_props = set(description) - {'type'}
         for prop, propdesc in basic.members.items():
             if prop not in actual_props:
-                if not propdesc.get('optional', False):
+                if not propdesc.optional:
                     self.emit(Severity.ERROR,
                               'missing required property for datainfo '
                               f'{descty}: {prop}')
             else:
                 with self.with_context('datainfo ' + descty, prop):
-                    self.check_dataty(propdesc['dataty'], description[prop])
+                    self.check_dataty(propdesc.dataty, description[prop])
             actual_props.discard(prop)
 
         if actual_props:
