@@ -56,6 +56,7 @@ V = TypeVar('V')
 class Property(Entity):
     dataty: Dataty
     optional: bool
+    forced_value: Any | None
 
 
 @dataclass
@@ -511,6 +512,7 @@ class Converter:
             description=self._get(data, 'description', str),
             dataty=self._get_dataty(data, 'dataty'),
             optional=self._get(data, 'optional', bool, default=False),
+            forced_value=self._get(data, 'value', object, default=None),
         )
 
     def _mk_datainfo(self, data: desc_dict) -> Datainfo:

@@ -23,8 +23,8 @@ modules:
       # defines a required value.
       - quantity:
           definition: quantity:1
-          # TODO: validate forced values
           description: Must be set to "current".
+          value: "current"
     parameters:
       # This parameter is already defined by Drivable, but the required
       # datainfo is made more concrete by this definition.
@@ -65,4 +65,4 @@ modules:
     properties:
       - quantity:
           definition: quantity:1
-          description: Must be set to "resistance".
+          value: "resistance"

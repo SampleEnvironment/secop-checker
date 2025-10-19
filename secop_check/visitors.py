@@ -207,6 +207,11 @@ class BasePropsChecker(BaseVisitor):
             else:
                 with self.checker.with_context('Property', member):
                     self.checker.check_dataty(props[member][0].dataty, mvalue)
+                if props[member][0].forced_value is not None and \
+                   mvalue != props[member][0].forced_value:
+                    self.checker.emit(Severity.ERROR,
+                        f'property has forced value '
+                        f'{props[member][0].forced_value!r}, got {mvalue!r}')
 
         if required:
             self.checker.emit(
