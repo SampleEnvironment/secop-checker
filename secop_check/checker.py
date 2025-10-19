@@ -148,6 +148,7 @@ class Checker(DiagnosticBase):
     def _check_dataty_tuple(self, description: dict[str, Any],
                             actual: object) -> tuple[str, bool]:
         members = description.get('members')
+        expected = 'tuple'
         if members is None:
             # just check for array, without further details
             matches = isinstance(actual, list)

@@ -288,11 +288,9 @@ class AccessibleChecker(BaseVisitor):
                         self.check_datainfo_template(kval_item, aval[kval_key])
             elif key == 'type':
                 # handle special cases
-                if kval == 'any':
-                    aval = kval
-                elif kval == 'number' and aval in ('double', 'scaled', 'int'):
-                    aval = kval
-                elif kval == 'double' and aval == 'scaled':
+                if kval == 'any' or \
+                   (kval == 'number' and aval in ('double', 'scaled', 'int')) or \
+                   (kval == 'double' and aval == 'scaled'):
                     aval = kval
 
                 if kval != aval:

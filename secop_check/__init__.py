@@ -117,13 +117,12 @@ def load_from_node(addr: str) -> tuple[str, str]:
     host, port_str = addr.split(':')
     port = int(port_str)
 
-    with socket.create_connection((host, port)) as s:
-        with s.makefile('rw') as sf:
-            sf.write('*IDN?\n')
-            sf.write('describe\n')
-            sf.flush()
-            idn = sf.readline()
-            ver = idn.strip().split(',')[-1].strip('vV')
-            desc = sf.readline()
+    with socket.create_connection((host, port)) as s, s.makefile('rw') as sf:
+        sf.write('*IDN?\n')
+        sf.write('describe\n')
+        sf.flush()
+        idn = sf.readline()
+        ver = idn.strip().split(',')[-1].strip('vV')
+        desc = sf.readline()
 
     return ver, desc
