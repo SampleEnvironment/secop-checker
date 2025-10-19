@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools-scm>=6"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "secop-check"
-version = "0.1.0"
+dynamic = ["version"]
 authors = [
     {name="Georg Brandl", email="g.brandl@fz-juelich.de"},
     {name="Alexander Zaft", email="a.zaft@fz-juelich.de"},    
@@ -25,3 +25,5 @@ dev = ["pytest"]
 
 [tool.setuptools]
 packages = ["secop_check"]
+
+[tool.setuptools_scm]
