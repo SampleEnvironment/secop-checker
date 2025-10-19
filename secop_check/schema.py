@@ -48,7 +48,7 @@ class Entity:
     link: str | None
     description: str
 
-ET = TypeVar('ET', bound=Entity)
+SomeEntity = TypeVar('SomeEntity', bound=Entity)
 V = TypeVar('V')
 
 
@@ -159,8 +159,8 @@ class Inventory:
     def add_global_props(self, kind: type[Entity], name: str) -> None:
         self._global_props.setdefault(kind, set()).add(name)
 
-    def get(self, kind: type[ET], name: str,
-            version: int | None = None) -> ET | None:
+    def get(self, kind: type[SomeEntity], name: str,
+            version: int | None = None) -> SomeEntity | None:
         if kind not in self._all_objects:
             return None
         if name not in self._all_objects[kind]:
@@ -172,18 +172,18 @@ class Inventory:
             return None
         return self._all_objects[kind][name][0]
 
-    def get_all(self, kind: type[ET]) -> dict[str, list[ET]]:
+    def get_all(self, kind: type[SomeEntity]) -> dict[str, list[SomeEntity]]:
         return self._all_objects.get(kind, {})
 
     def is_global(self, kind: type[Entity], name: str) -> bool:
         return name in self._global.get(kind, {})
 
-    def get_global(self, kind: type[ET]) -> list[ET]:
+    def get_global(self, kind: type[SomeEntity]) -> list[SomeEntity]:
         # TODO: multiple versions
         return [self._all_objects[kind][name][0] for
                 name in self._global.get(kind, {})]
 
-    def get_global_props(self, kind: type[ET]) -> list[Property]:
+    def get_global_props(self, kind: type[SomeEntity]) -> list[Property]:
         # TODO: multiple versions
         return [self._all_objects[Property][name][0] for
                 name in self._global_props.get(kind, {})]
@@ -274,7 +274,7 @@ class Converter:
         with self.loader.with_context(data['kind'], data['name']):
             return method(data)
 
-    def _resolve(self, kind: type[ET], reference: object) -> ET:
+    def _resolve(self, kind: type[SomeEntity], reference: object) -> SomeEntity:
         kind_name = kind.__name__
         if isinstance(reference, dict):
             name, props = reference.popitem()
@@ -291,7 +291,7 @@ class Converter:
                 props['kind'] = kind_name
                 props['version'] = 0
                 props['name'] = name
-                return cast('ET', self.convert(props))
+                return cast('SomeEntity', self.convert(props))
             base = deepcopy(self._resolve(kind, props.pop('definition')))
             for key, val in props.items():
                 setattr(base, key, val)  # TODO: does not resolve!
@@ -312,18 +312,18 @@ class Converter:
             version = 0
 
         if done := self.inv.get(kind, name, version):
-            return cast('ET', done)
+            return cast('SomeEntity', done)
 
         try:
             obj = self.raw[kind_name][name][version]
         except KeyError:
             self.loader.emit_catastrophic(
                 f'could not resolve {kind_name} reference {name}:{version}')
-            return cast('ET', None)  # unreachable
+            return cast('SomeEntity', None)  # unreachable
         else:
             schema_obj = self.convert(obj)
             self.inv.add(schema_obj)
-            return cast('ET', schema_obj)
+            return cast('SomeEntity', schema_obj)
 
     def _get(self, data: desc_dict, key: str, typ: type[V],
              default: V | EllipsisType = Ellipsis) -> V:
