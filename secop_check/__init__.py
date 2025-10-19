@@ -23,6 +23,7 @@
 
 import json
 import socket
+import sys
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -55,7 +56,7 @@ class Diagnostic:
     msg: str
 
 
-class Catastrophe(Exception):
+class Catastrophe(Exception):  # noqa: N818
     pass
 
 
@@ -65,6 +66,13 @@ class DiagnosticBase:
         self._diags = []
         self._step = ''
         self._context = Context(path=[])
+        self._out = sys.stdout
+
+    def get_diags(self):
+        return self._diags
+
+    def set_diags(self, diags):
+        self._diags = diags
 
     @contextmanager
     def with_context(self, kind, name):
@@ -81,19 +89,20 @@ class DiagnosticBase:
 
     def _print(self, diag):
         if self._output == 'json':
-            print(json.dumps({
+            self._out.write(json.dumps({
                 'severity': diag.severity.name,
                 'step': diag.step,
                 'msg': diag.msg,
                 'ctx': diag.ctx.path,
             }))
+            self._out.write('\n')
         elif self._output == 'text':
             step = f' [{diag.step}]' if diag.step else ''
             ctx = ' / '.join(f'{ty} {name}'.strip()
                              for ty, name in diag.ctx.path).strip()
             if ctx:
                 ctx += ': '
-            print(f'{diag.severity.name}{step}: {ctx}{diag.msg}')
+            self._out.write(f'{diag.severity.name}{step}: {ctx}{diag.msg}\n')
 
 
 def load_from_node(addr):

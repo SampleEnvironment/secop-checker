@@ -34,7 +34,7 @@ class Checker(DiagnosticBase):
         super().__init__(output)
 
         self.loader = Loader(Path(__file__).parents[1] / 'defs', output)
-        self.loader._diags = self._diags
+        self.loader.set_diags(self._diags)
         self.loader.load(version, additional)
 
         self._inv = self.loader.get_inv()
@@ -48,13 +48,12 @@ class Checker(DiagnosticBase):
         # combined schema of properties by (module, accessible)
         self._all_accprops = {}
 
-    def get_diags(self):
-        return self._diags
+    def get_inv(self):
+        return self._inv
 
     def check(self, desc: str):
         # for simplicity, allow a "describing" SECoP reply
-        if desc.startswith('describing . '):
-            desc = desc[len('describing . '):]
+        desc = desc.removeprefix('describing . ')
         try:
             desc = json.loads(desc)
         except json.JSONDecodeError as e:
@@ -73,22 +72,22 @@ class Checker(DiagnosticBase):
 
     def add_parameters(self, name, params, source=None):
         self._all_pars.setdefault(name, {}).update(
-            {par.name: (par, source) for par in params}
+            {par.name: (par, source) for par in params},
         )
 
     def add_commands(self, name, cmds, source=None):
         self._all_cmds.setdefault(name, {}).update(
-            {cmd.name: (cmd, source) for cmd in cmds}
+            {cmd.name: (cmd, source) for cmd in cmds},
         )
 
     def add_mod_properties(self, name, props, source=None):
         self._all_modprops.setdefault(name, {}).update(
-            {prop.name: (prop, source) for prop in props}
+            {prop.name: (prop, source) for prop in props},
         )
 
     def add_acc_properties(self, name, acc, props, source=None):
         self._all_accprops.setdefault((name, acc), {}).update(
-            {prop.name: (prop, source) for prop in props}
+            {prop.name: (prop, source) for prop in props},
         )
 
     def get_parameters(self, name):
@@ -103,7 +102,7 @@ class Checker(DiagnosticBase):
     def get_acc_properties(self, name, acc):
         return self._all_accprops.get((name, acc), {})
 
-    def check_dataty(self, description, actual, quiet=False):
+    def check_dataty(self, description, actual, *, quiet=False):
         matches = False
         expected = description
         if description == 'any':
@@ -257,9 +256,9 @@ class Checker(DiagnosticBase):
                         else:
                             visitor.visit_parameter(modname, accname, accdesc)
 
-                        for prop, propdesc in accdesc.items():
-                            with self.with_context('Property', prop):
-                                visitor.visit_property(ty, prop, propdesc)
+                        for aprop, apropdesc in accdesc.items():
+                            with self.with_context('Property', aprop):
+                                visitor.visit_property(ty, aprop, apropdesc)
 
                         visitor.finish_accessible(accdesc)
 

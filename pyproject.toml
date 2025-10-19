@@ -27,3 +27,10 @@ dev = ["pytest"]
 packages = ["secop_check"]
 
 [tool.setuptools_scm]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["ANN", "D1", "D203", "D213", "ERA", "FIX", "SIM", "S101", "TD"]
+flake8-quotes.inline-quotes = "single"
+mccabe.max-complexity = 20
+pylint.max-branches = 20

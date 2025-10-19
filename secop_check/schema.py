@@ -21,10 +21,11 @@
 #
 # *****************************************************************************
 
+from __future__ import annotations
+
 from copy import deepcopy
 from dataclasses import dataclass
-from os import path
-from typing import Optional
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen
 
@@ -73,8 +74,8 @@ class Command:
     version: int
     link: str
     description: str
-    argument: Optional[Datainfo]
-    result: Optional[Datainfo]
+    argument: Datainfo | None
+    result: Datainfo | None
     optional: bool
     properties: list[Property]
 
@@ -85,7 +86,7 @@ class Interface:
     version: int
     link: str
     description: str
-    base: Optional['Interface']
+    base: Interface | None
     parameters: list[Parameter]
     commands: list[Command]
     properties: list[Property]
@@ -108,9 +109,9 @@ class System:
     version: int
     link: str
     description: str
-    base: Optional['System']
+    base: System | None
     modules: dict[str, Interface]
-    systems: dict[str, 'System']
+    systems: dict[str, System]
 
 
 @dataclass
@@ -187,17 +188,15 @@ class Loader(DiagnosticBase):
     def __init__(self, root, output):
         super().__init__(output)
         self._inv = Inventory()
-        self._root = root
+        self._root = Path(root)
 
     def _load_one(self, uri, raw_objects):
+        uri = str(uri)
         try:
-            if '://' in uri:
-                fobj = urlopen(uri)
-            else:
-                fobj = open(uri)
-            with fobj as f:
+            openfunc = urlopen if '://' in uri else open
+            with openfunc(uri) as f:
                 data = list(yaml.safe_load_all(f))
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             self.emit(Severity.CATASTROPHIC, 'could not load yaml from '
                       f'{uri}: {err}')
             return
@@ -232,10 +231,10 @@ class Loader(DiagnosticBase):
         for filename in repo['files']:
             if '://' in uri:
                 parsed = urlparse(uri)
-                new_path = path.join(path.dirname(parsed.path), filename)
+                new_path = Path(parsed.path) / filename
                 new_uri = urlunparse(parsed._replace(path=new_path))
             else:
-                new_uri = path.join(path.dirname(uri), filename)
+                new_uri = Path(uri).parent / filename
             self._load_one(new_uri, raw_objects)
 
         # this will also resolve all reachable subobjects and add them to
@@ -243,8 +242,8 @@ class Loader(DiagnosticBase):
         return Converter(self, raw_objects).convert(repo)
 
     def load(self, version, additional):
-        ver_root = path.join(self._root, f'version-{version}.yaml')
-        if not path.isfile(ver_root):
+        ver_root = self._root / f'version-{version}.yaml'
+        if not ver_root.is_file():
             self.emit(Severity.CATASTROPHIC, 'no root yaml found for '
                       f'version {version}')
         self.load_repo(ver_root)
@@ -262,7 +261,7 @@ ref = (dict, str)
 class Converter:
     def __init__(self, loader, raw):
         self.loader = loader
-        self.inv = loader._inv
+        self.inv = loader.get_inv()
         self.raw = raw
 
     def convert(self, data):
@@ -296,7 +295,7 @@ class Converter:
                 setattr(base, key, val)  # TODO: does not resolve!
             return base
 
-        elif not isinstance(reference, str):
+        if not isinstance(reference, str):
             self.loader.emit(Severity.CATASTROPHIC,
                              f'invalid {kind} reference type {reference!r}')
 
@@ -316,8 +315,8 @@ class Converter:
         try:
             obj = self.raw[kind][name][version]
         except KeyError:
-            self.loader.emit(Severity.CATASTROPHIC, f'could not resolve {kind} '
-                             f'reference {name}:{version}')
+            self.loader.emit(Severity.CATASTROPHIC, f'could not resolve {kind}'
+                             f' reference {name}:{version}')
         else:
             schema_obj = self.convert(obj)
             self.inv.add(kind, schema_obj)
@@ -447,8 +446,8 @@ class Converter:
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             datainfo=self._get(data, 'datainfo', ref),
-            readonly=self._get(data, 'readonly', bool, False),
-            optional=self._get(data, 'optional', bool, False),
+            readonly=self._get(data, 'readonly', bool, default=False),
+            optional=self._get(data, 'optional', bool, default=False),
             properties=[self._resolve('Property', x)
                         for x in self._get(data, 'properties', list, [])],
         )
@@ -461,7 +460,7 @@ class Converter:
             description=self._get(data, 'description', str),
             argument=self._get(data, 'argument', ref),
             result=self._get(data, 'result', ref),
-            optional=self._get(data, 'optional', bool, False),
+            optional=self._get(data, 'optional', bool, default=False),
             properties=[self._resolve('Property', x)
                         for x in self._get(data, 'properties', list, [])],
         )
@@ -473,7 +472,7 @@ class Converter:
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             dataty=self._get(data, 'dataty', ref),
-            optional=self._get(data, 'optional', bool, False),
+            optional=self._get(data, 'optional', bool, default=False),
         )
 
     def _mk_datainfo(self, data):

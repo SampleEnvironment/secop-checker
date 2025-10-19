@@ -40,8 +40,7 @@ def parse_args(argv):
                         ' not used when loading from a node')
     parser.add_argument('--schema', action='append', default=[],
                         help='additional schema repository file to read')
-    args = parser.parse_args(argv)
-    return args
+    return parser.parse_args(argv)
 
 
 def main():
@@ -53,7 +52,7 @@ def main():
     elif args.infile == '-':
         desc = sys.stdin.read()
     else:
-        with open(args.infile, encoding='utf-8') as f:
+        with open(args.infile, encoding='utf-8') as f:  # noqa: PTH123
             desc = f.read()
 
     try:
