@@ -73,8 +73,8 @@ class Command:
     version: int
     link: str
     description: str
-    argument: Datainfo | None
-    result: Datainfo | None
+    argument: Optional[Datainfo]
+    result: Optional[Datainfo]
     optional: bool
     properties: list[Property]
 
