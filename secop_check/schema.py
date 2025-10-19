@@ -79,6 +79,26 @@ class Parameter(Entity):
     optional: bool
     properties: list[Property]
 
+    @staticmethod
+    def from_postfix(name: str, postfix: ParameterPostfix) -> Parameter:
+        return Parameter(
+            name=name,
+            version=postfix.version,
+            link=postfix.link,
+            description=postfix.description,
+            datainfo=postfix.datainfo,
+            readonly=postfix.readonly,
+            optional=True,
+            properties=postfix.properties,
+        )
+
+
+@dataclass
+class ParameterPostfix(Entity):
+    datainfo: dict[str, Any]
+    readonly: bool
+    properties: list[Property]
+
 
 @dataclass
 class Command(Entity):
@@ -126,6 +146,7 @@ class Repository(Entity):
     interfaces: list[Interface]
     features: list[Feature]
     parameters: list[Parameter]
+    postfixes: list[ParameterPostfix]
     commands: list[Command]
     properties: Properties
     datainfo: list[Datainfo]
@@ -387,6 +408,8 @@ class Converter:
                       for x in self._get(data, 'features', list)],
             parameters=[self._resolve(Parameter, x)
                         for x in self._get(data, 'parameters', list)],
+            postfixes=[self._resolve(ParameterPostfix, x)
+                       for x in self._get(data, 'postfixes', list)],
             commands=[self._resolve(Command, x)
                       for x in self._get(data, 'commands', list)],
             properties=self._mk_properties(
@@ -487,6 +510,18 @@ class Converter:
             datainfo=self._get_datainfo(data, 'datainfo'),
             readonly=self._get(data, 'readonly', bool, default=False),
             optional=self._get(data, 'optional', bool, default=False),
+            properties=[self._resolve(Property, x)
+                        for x in self._get(data, 'properties', list, [])],
+        )
+
+    def _mk_parameterpostfix(self, data: desc_dict) -> ParameterPostfix:
+        return ParameterPostfix(
+            name=self._get(data, 'name', str),
+            version=self._get(data, 'version', int),
+            link=self._get(data, 'link', str, None),
+            description=self._get(data, 'description', str),
+            datainfo=self._get_datainfo(data, 'datainfo'),
+            readonly=self._get(data, 'readonly', bool, default=False),
             properties=[self._resolve(Property, x)
                         for x in self._get(data, 'properties', list, [])],
         )

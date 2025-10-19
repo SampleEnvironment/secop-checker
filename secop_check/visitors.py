@@ -28,7 +28,15 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from . import Severity
 from .dataty import Dataty
-from .schema import Command, Feature, Interface, Module, Parameter, SECNode
+from .schema import (
+    Command,
+    Feature,
+    Interface,
+    Module,
+    Parameter,
+    ParameterPostfix,
+    SECNode,
+)
 
 if TYPE_CHECKING:
     IFT = TypeVar('IFT', Interface, Feature)
@@ -266,8 +274,10 @@ class AccessibleChecker(BaseVisitor):
                     f'missing required command {cname} from {from_}',
                 )
 
-    def check_datainfo_template(self, should: str | desc_dict,
-                                actual: dict) -> None:
+    def check_datainfo_template(self,
+                                should: str | desc_dict,
+                                actual: desc_dict,
+                                parent: str | desc_dict | None) -> None:
         """Check if a prescribed datainfo matches the actual datainfo.
 
         Does not check the datainfo itself for validity, this was done in
@@ -275,6 +285,8 @@ class AccessibleChecker(BaseVisitor):
         """
         if should == 'any':
             return
+        if should in ['parent', {'type': 'parent'}] and parent is not None:
+            should = parent
         if isinstance(should, str):
             should = {'type': should}
 
@@ -285,17 +297,19 @@ class AccessibleChecker(BaseVisitor):
                                   f'missing required datainfo key {key}')
                 continue
             if should['type'] == 'array' and key == 'members':
-                self.check_datainfo_template(kval, aval)
+                self.check_datainfo_template(kval, aval, parent)
             elif should['type'] == 'tuple' and key == 'members':
                 for _i, (kval_item, aval_item) in enumerate(zip(kval, aval)):
-                    self.check_datainfo_template(kval_item, aval_item)
+                    self.check_datainfo_template(kval_item, aval_item, parent)
             elif should['type'] == 'struct' and key == 'members':
                 for kval_key, kval_item in kval.items():
                     if kval_key not in aval:
                         self.checker.emit(Severity.ERROR,
                                           f'missing struct member {kval_key}')
                     else:
-                        self.check_datainfo_template(kval_item, aval[kval_key])
+                        self.check_datainfo_template(kval_item,
+                                                     aval[kval_key],
+                                                     parent)
             elif key == 'type':
                 # handle special cases
                 if kval == 'any' or \
@@ -317,13 +331,25 @@ class AccessibleChecker(BaseVisitor):
                         description: desc_dict) -> None:
         should_src = self.checker.get_parameters(modname).get(name)
         if should_src is None:
-            if not name.startswith('_'):
-                self.checker.emit(
-                    Severity.WARNING,
-                    "non-standard parameters need '_' as a prefix",
-                )
-            return
-        should = should_src[0]
+            # it might be a postfixed parameter!
+            for postfix, pf_defs in self.inv.get_all(ParameterPostfix).items():
+                if name.endswith(postfix):
+                    should = Parameter.from_postfix(name, pf_defs[0])
+
+                    # TODO: make sure the non-postfixed parameter exists
+                    # and figure out its datainfo
+                    parent_datainfo = None
+                    break
+            else:
+                if not name.startswith('_'):
+                    self.checker.emit(
+                        Severity.WARNING,
+                        "non-standard parameters need '_' as a prefix",
+                    )
+                return
+        else:
+            should = should_src[0]
+            parent_datainfo = None
 
         # special case: check "constant" parameter value
         if 'constant' in description:
@@ -345,7 +371,8 @@ class AccessibleChecker(BaseVisitor):
             else:
                 self.checker.emit(Severity.WARNING,
                                   'parameter should not be readonly')
-        self.check_datainfo_template(should.datainfo, description['datainfo'])
+        self.check_datainfo_template(should.datainfo, description['datainfo'],
+                                     parent_datainfo)
 
     def visit_command(self, modname: str, name: str, description: desc_dict) -> None:
         should_src = self.checker.get_commands(modname).get(name)
@@ -364,7 +391,7 @@ class AccessibleChecker(BaseVisitor):
                                   'command should not have an argument')
             else:
                 self.check_datainfo_template(
-                    should.argument, description['datainfo']['argument'])
+                    should.argument, description['datainfo']['argument'], None)
         elif should.argument != {'type': 'none'}:
             self.checker.emit(Severity.WARNING,
                               'command should have an argument: '
@@ -376,7 +403,7 @@ class AccessibleChecker(BaseVisitor):
                                   'command should not have a result')
             else:
                 self.check_datainfo_template(
-                    should.result, description['datainfo']['result'])
+                    should.result, description['datainfo']['result'], None)
         elif should.result != {'type': 'none'}:
             self.checker.emit(Severity.WARNING,
                               'command should have a result: '

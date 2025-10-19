@@ -28,16 +28,6 @@ description: |
 
 ---
 kind: Parameter
-name: goal_enable
-version: 2
-optional: true
-readonly: false
-datainfo: bool
-description: |
-  Enables checking the "goal" parameter.
-
----
-kind: Parameter
 name: roi
 version: 2
 optional: true
@@ -96,7 +86,6 @@ description: |
     acquisition process.
 parameters:
   - goal:2
-  - goal_enable:2
   - roi:2
 commands:
   - get_data:2
@@ -111,7 +100,6 @@ description: |
     data acquisition process.
 parameters:
   - goal:2
-  - goal_enable:2
   - roi:2
 commands:
   - prepare:2
