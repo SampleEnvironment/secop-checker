@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secop-check"
+version = "0.1.0"
+authors = [
+    {name="Georg Brandl", email="g.brandl@fz-juelich.de"},
+    {name="Alexander Zaft", email="a.zaft@fz-juelich.de"},    
+]
+license = "GPL-2.0-or-later"
+description = "Add your description here"
+readme = "README.rst"
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=5.4",
+]
+
+[project.scripts]
+secop-check = "secop_check.main:main"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["secop_check"]
