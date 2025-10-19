@@ -4,7 +4,7 @@ name: double
 version: 1
 description: A floating point value.
 dataty: number
-members:
+dataprops:
   min:
     dataty: number
     optional: true
@@ -32,7 +32,7 @@ name: scaled
 version: 1
 description: A floating point transported as integer with defined scale.
 dataty: int
-members:
+dataprops:
   min:
     dataty: int
   max:
@@ -60,7 +60,7 @@ name: int
 version: 1
 description: An integral value.
 dataty: int
-members:
+dataprops:
   min:
     dataty: int
   max:
@@ -75,7 +75,7 @@ name: bool
 version: 1
 description: A boolean value.
 dataty: bool
-members: {}
+dataprops: {}
 
 ---
 kind: Datainfo
@@ -83,7 +83,7 @@ name: enum
 version: 1
 description: Collection of predefined values mapped to integers.
 dataty: int
-members:
+dataprops:
   members:
     dataty:
       type: struct
@@ -95,7 +95,7 @@ name: string
 version: 1
 description: A string.
 dataty: string
-members:
+dataprops:
   minchars:
     optional: true
     dataty: int
@@ -112,7 +112,7 @@ name: blob
 version: 1
 description: Base64 encoded string for binary types.
 dataty: string
-members:
+dataprops:
   maxbytes:
     dataty: int
   minbytes:
@@ -126,7 +126,7 @@ name: array
 version: 1
 description: Multiple values of the same type.
 dataty: array
-members:
+dataprops:
   members:
     dataty: datainfo
   maxlen:
@@ -142,7 +142,7 @@ name: tuple
 version: 1
 description: Finite sequence of variously typed items.
 dataty: array
-members:
+dataprops:
   members:
     dataty:
       type: array
@@ -154,7 +154,7 @@ name: struct
 version: 1
 description: Mixed type collection of named values.
 dataty: struct
-members:
+dataprops:
   members:
     dataty:
       type: struct
@@ -177,7 +177,7 @@ dataty:
       type: array
       members: int
     blob: string
-members:
+dataprops:
   names:
     dataty:
       type: array

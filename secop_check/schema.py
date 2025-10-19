@@ -59,7 +59,7 @@ class Property(Entity):
 
 
 @dataclass
-class DatainfoMember:  # not an Entity!
+class Dataprop:  # not an Entity!
     dataty: Dataty
     optional: bool
     default: Any
@@ -68,7 +68,7 @@ class DatainfoMember:  # not an Entity!
 @dataclass
 class Datainfo(Entity):
     dataty: Dataty
-    members: dict[str, DatainfoMember]
+    dataprops: dict[str, Dataprop]
 
 
 @dataclass
@@ -514,19 +514,19 @@ class Converter:
         )
 
     def _mk_datainfo(self, data: desc_dict) -> Datainfo:
-        members = self._get(data, 'members', dict)
+        dprops = self._get(data, 'dataprops', dict)
         return Datainfo(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             dataty=self._get_dataty(data, 'dataty'),
-            members={
-                name: DatainfoMember(
+            dataprops={
+                name: Dataprop(
                     dataty=self._get_dataty(x, 'dataty'),
                     optional=self._get(x, 'optional', bool, default=False),
                     default=self._get(x, 'default', object, default=None),
                 )
-                for (name, x) in members.items()
+                for (name, x) in dprops.items()
             },
         )

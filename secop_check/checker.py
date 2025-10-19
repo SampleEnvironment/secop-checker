@@ -150,22 +150,22 @@ class Checker(DiagnosticBase):
             self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
             return
 
-        actual_props = set(description) - {'type'}
-        for prop, propdesc in basic.members.items():
-            if prop not in actual_props:
-                if not propdesc.optional:
+        actual_dprops = set(description) - {'type'}
+        for dprop, dpropdesc in basic.dataprops.items():
+            if dprop not in actual_dprops:
+                if not dpropdesc.optional:
                     self.emit(Severity.ERROR,
                               'missing required property for datainfo '
-                              f'{descty}: {prop}')
+                              f'{descty}: {dprop}')
             else:
-                with self.with_context('datainfo ' + descty, prop):
-                    self.check_dataty(propdesc.dataty, description[prop])
-            actual_props.discard(prop)
+                with self.with_context('datainfo ' + descty, dprop):
+                    self.check_dataty(dpropdesc.dataty, description[dprop])
+            actual_dprops.discard(dprop)
 
-        if actual_props:
+        if actual_dprops:
             self.emit(Severity.WARNING,
                       'unknown properties given for datainfo '
-                      f'{descty}: {actual_props}')
+                      f'{descty}: {actual_dprops}')
 
     def visit_descriptive_data(self, desc: desc_dict) -> None:
         for visitorcls in VISITORS:
