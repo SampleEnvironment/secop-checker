@@ -27,7 +27,7 @@ import sys
 import secop_check.checker
 
 
-def parse_args(argv):
+def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('infile', help='input file with descriptive JSON '
                         'or a SEC node address in the form host:port')
@@ -43,7 +43,7 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
-def main():
+def main() -> None:
     args = parse_args(sys.argv[1:])
     version = args.version
 

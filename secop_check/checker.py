@@ -21,16 +21,22 @@
 #
 # *****************************************************************************
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
+from typing import Any, Union
 
 from . import DiagnosticBase, Severity
-from .schema import Loader
-from .visitors import VISITORS
+from .schema import Command, Datainfo, Inventory, Loader, Parameter, Property
+from .visitors import VISITORS, BaseVisitor
+
+desc_dict = dict[str, Any]
+source = Union[str, None]
 
 
 class Checker(DiagnosticBase):
-    def __init__(self, version, additional, output):
+    def __init__(self, version: str, additional: list[str], output: str) -> None:
         super().__init__(output)
 
         self.loader = Loader(Path(__file__).parents[1] / 'defs', output)
@@ -41,142 +47,177 @@ class Checker(DiagnosticBase):
 
         # schema of params/commands by module, combined from interfaces,
         # features and systems
-        self._all_pars = {}
-        self._all_cmds = {}
+        self._all_pars: dict[str, dict] = {}
+        self._all_cmds: dict[str, dict] = {}
         # combined schema of properties by module
-        self._all_modprops = {}
+        self._all_modprops: dict[str, dict] = {}
         # combined schema of properties by (module, accessible)
-        self._all_accprops = {}
+        self._all_accprops: dict[tuple[str, str], dict] = {}
 
-    def get_inv(self):
+    def get_inv(self) -> Inventory:
         return self._inv
 
-    def check(self, desc: str):
+    def check(self, desc: str) -> None:
         # for simplicity, allow a "describing" SECoP reply
         desc = desc.removeprefix('describing . ')
         try:
-            desc = json.loads(desc)
+            desc_obj = json.loads(desc)
         except json.JSONDecodeError as e:
-            self.emit(Severity.CATASTROPHIC, f'invalid json at line {e.lineno}'
-                      f' column {e.colno}:\n{e.msg}')
+            self.emit_catastrophic(f'invalid json at line {e.lineno} '
+                                   f'column {e.colno}:\n{e.msg}')
 
-        schemata = desc.get('schemata', {})
+        schemata = desc_obj.get('schemata', {})
         for uri in schemata:
             self.loader.load_repo(uri)
 
         if self._diags:
-            self.emit(Severity.CATASTROPHIC, 'found errors loading spec to '
-                      'validate against, exiting')
+            self.emit_catastrophic('found errors loading spec to '
+                                   'validate against, exiting')
 
-        self.visit_descriptive_data(desc)
+        self.visit_descriptive_data(desc_obj)
 
-    def add_parameters(self, name, params, source=None):
+    def add_parameters(self, name: str, params: list[Parameter],
+                       source: str | None = None) -> None:
         self._all_pars.setdefault(name, {}).update(
             {par.name: (par, source) for par in params},
         )
 
-    def add_commands(self, name, cmds, source=None):
+    def add_commands(self, name: str, cmds: list[Command],
+                     source: str | None = None) -> None:
         self._all_cmds.setdefault(name, {}).update(
             {cmd.name: (cmd, source) for cmd in cmds},
         )
 
-    def add_mod_properties(self, name, props, source=None):
+    def add_mod_properties(self, name: str, props: list[Property],
+                           source: str | None = None) -> None:
         self._all_modprops.setdefault(name, {}).update(
             {prop.name: (prop, source) for prop in props},
         )
 
-    def add_acc_properties(self, name, acc, props, source=None):
+    def add_acc_properties(self, name: str, acc: str, props: list[Property],
+                           source: str | None = None) -> None:
         self._all_accprops.setdefault((name, acc), {}).update(
             {prop.name: (prop, source) for prop in props},
         )
 
-    def get_parameters(self, name):
+    def get_parameters(self, name: str) -> dict[str, tuple[Parameter, source]]:
         return self._all_pars.get(name, {})
 
-    def get_commands(self, name):
+    def get_commands(self, name: str) -> dict[str, tuple[Command, source]]:
         return self._all_cmds.get(name, {})
 
-    def get_mod_properties(self, name):
+    def get_mod_properties(self, name: str) -> dict[str, tuple[Property, source]]:
         return self._all_modprops.get(name, {})
 
-    def get_acc_properties(self, name, acc):
+    def get_acc_properties(self, name: str, acc: str,
+                           ) -> dict[str, tuple[Property, source]]:
         return self._all_accprops.get((name, acc), {})
 
-    def check_dataty(self, description, actual, *, quiet=False):
-        matches = False
-        expected = description
-        if description == 'any':
-            matches = True
-        elif description == 'number':
-            matches = isinstance(actual, (int, float))
-        elif description == 'double':
-            matches = isinstance(actual, float)
-        elif description == 'int':
-            matches = isinstance(actual, int) or \
-                (isinstance(actual, float) and actual.is_integer())
-        elif description == 'string':
-            matches = isinstance(actual, str)
-        elif description == 'bool':
-            matches = isinstance(actual, bool)
-        elif description in ('array', 'tuple'):  # without further details
-            matches = isinstance(actual, list)
-        elif description == 'struct':            # without further details
+    def _fixup_dataty(self, s: str | dict) -> dict:
+        if isinstance(s, str):
+            return {'type': s}
+        return s
+
+    def _check_dataty_struct(self, description: dict[str, Any],
+                             actual: object) -> tuple[str, bool]:
+        expected = 'struct'
+        members = description.get('members')
+        if members is None:
+            # just check for object, without further details
             matches = isinstance(actual, dict)
-        elif description == 'datainfo':
-            self.check_datainfo(actual)
-            matches = True  # check_datainfo will emit errors
-        elif isinstance(description, dict) and description['type'] == 'int':
+        elif isinstance(members, str):
+            # TODO: the expected description sucks
+            expected = f'struct with str names and {members} values'
+            matches = isinstance(actual, dict) and \
+                all(isinstance(k, str) for k in actual) and \
+                all(self.check_dataty({'type': members}, v, quiet=True)
+                    for v in actual.values())
+        else:
+            # TODO: the expected description sucks
+            expected = 'struct with ' + ', '.join(
+                f'{k}: {v}' for k, v in members.items())
+            optional = description.get('optional', [])
+            matches = isinstance(actual, dict) and \
+                all((k not in actual and k in optional) or
+                    (k in actual and
+                     self.check_dataty(self._fixup_dataty(members[k]),
+                                       actual[k], quiet=True))
+                    for k in members)
+        return expected, matches
+
+    def _check_dataty_tuple(self, description: dict[str, Any],
+                            actual: object) -> tuple[str, bool]:
+        members = description.get('members')
+        if members is None:
+            # just check for array, without further details
+            matches = isinstance(actual, list)
+        else:
+            # TODO: the expected description sucks
+            expected = 'array of ' + ', '.join(map(str, members))
+            matches = isinstance(actual, list) and \
+                len(actual) == len(members) and \
+                all(self.check_dataty(self._fixup_dataty(desc), v,
+                                      quiet=True)
+                    for desc, v in zip(members, actual))
+        return expected, matches
+
+    def check_dataty(self, description: dict[str, Any], actual: object, *,
+                     quiet: bool = False) -> bool:
+        matches = False
+        descty = expected = description['type']
+        if descty == 'any':
+            matches = True
+        elif descty == 'number':
+            matches = isinstance(actual, (int, float))
+        elif descty == 'double':
+            matches = isinstance(actual, float)
+        elif descty == 'int':
+            is_int = isinstance(actual, int) or \
+                (isinstance(actual, float) and actual.is_integer())
             mini = description.get('min', -float('inf'))
             maxi = description.get('max', float('inf'))
-            expected = f'int in [{mini}, {maxi}]'
-            matches = (isinstance(actual, int) or
-                       (isinstance(actual, float) and
-                        actual.is_integer())) and mini <= actual <= maxi
-        elif isinstance(description, dict) and description['type'] == 'oneof':
-            expected = f'any of {", ".join(description["values"])}'
-            matches = isinstance(actual, str) and \
-                any(actual == v for v in description['values'])
-        elif isinstance(description, dict) and description['type'] == 'array':
-            # TODO: the expected description sucks
-            expected = f'array of {description["members"]}'
-            matches = isinstance(actual, list) and \
-                all(self.check_dataty(description['members'], v, quiet=True)
-                    for v in actual)
-        elif isinstance(description, dict) and description['type'] == 'tuple':
-            expected = 'array of ' + ', '.join(map(str, description['members']))
-            matches = isinstance(actual, list) and \
-                len(actual) == len(description['members']) and \
-                all(self.check_dataty(desc, v, quiet=True)
-                    for desc, v in zip(description['members'], actual))
-        elif isinstance(description, dict) and description['type'] == 'struct':
-            if isinstance(description['members'], str):
-                expected = ('struct with str names and '
-                            f'{description["members"]} values')
-                matches = isinstance(actual, dict) and \
-                    all(isinstance(k, str) for k in actual) and \
-                    all(self.check_dataty(description['members'],
-                                          v, quiet=True)
-                        for v in actual.values())
+            if 'min' in description or 'max' in description:
+                expected = f'int in [{mini}, {maxi}]'
+            matches = is_int and mini <= actual <= maxi
+        elif descty == 'string':
+            matches = isinstance(actual, str)
+        elif descty == 'bool':
+            matches = isinstance(actual, bool)
+        elif descty == 'array':
+            members = description.get('members')
+            if members is None:
+                matches = isinstance(actual, list)
             else:
-                expected = 'struct with ' + ', '.join(
-                    f'{k}: {v}' for k, v in description['members'].items())
-                optional = description.get('optional', [])
-                matches = isinstance(actual, dict) and \
-                    all((k not in actual and k in optional) or
-                        (k in actual and
-                         self.check_dataty(description['members'][k],
-                                           actual[k], quiet=True))
-                        for k in description['members'])
+                # TODO: the expected description sucks
+                expected = f'array of {members}'
+                matches = isinstance(actual, list) and \
+                    all(self.check_dataty(self._fixup_dataty(members), v,
+                                          quiet=True)
+                        for v in actual)
+        elif descty == 'tuple':
+            expected, matches = self._check_dataty_tuple(description, actual)
+        elif descty == 'struct':
+            expected, matches = self._check_dataty_struct(description, actual)
+        elif descty == 'datainfo':
+            if isinstance(actual, dict):
+                self.check_datainfo(actual)
+                matches = True  # check_datainfo will emit errors
+            else:
+                matches = False
+        elif descty == 'oneof':
+            values = description['values']
+            expected = f'any of {", ".join(values)}'
+            matches = isinstance(actual, str) and actual in values
         else:
-            self.emit(Severity.CATASTROPHIC, 'unknown dataty given in spec: '
-                      f'{description}')
+            self.emit_catastrophic('unknown dataty given in spec: '
+                                   f'{description}')
 
         if not matches and not quiet:
             self.emit(Severity.ERROR,
                       f'expected {expected}, got {actual!r}')
         return matches
 
-    def check_datainfo(self, description):
+    def check_datainfo(self, description: desc_dict) -> None:
         """Check validity of a datainfo description."""
         if not description:
             self.emit(Severity.ERROR, 'datainfo is empty')
@@ -197,7 +238,7 @@ class Checker(DiagnosticBase):
                     self.check_datainfo(description['result'])
             return
 
-        basic = self._inv.get('Datainfo', descty)
+        basic = self._inv.get(Datainfo, descty)
         if basic is None:
             self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
             return
@@ -219,12 +260,12 @@ class Checker(DiagnosticBase):
                       'unknown properties given for datainfo '
                       f'{descty}: {actual_props}')
 
-    def visit_descriptive_data(self, desc):
+    def visit_descriptive_data(self, desc: desc_dict) -> None:
         for visitorcls in VISITORS:
             self._step = visitorcls.name
             self.visit_with(desc, visitorcls(self))
 
-    def visit_with(self, desc, visitor):
+    def visit_with(self, desc: desc_dict, visitor: BaseVisitor) -> None:
         with self.with_context('SECNode', ''):
             visitor.visit_secnode(desc)
 
@@ -241,7 +282,8 @@ class Checker(DiagnosticBase):
 
             visitor.finish()
 
-    def _visit_module(self, modname, moddesc, visitor):
+    def _visit_module(self, modname: str, moddesc: desc_dict,
+                      visitor: BaseVisitor) -> None:
         visitor.visit_module(modname, moddesc)
 
         for prop, propdesc in moddesc.items():

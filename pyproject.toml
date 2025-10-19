@@ -30,7 +30,7 @@ packages = ["secop_check"]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["ANN", "D1", "D203", "D213", "ERA", "FIX", "SIM", "S101", "TD"]
+ignore = ["D1", "D203", "D213", "FIX", "SIM", "S101", "TD"]
 flake8-quotes.inline-quotes = "single"
 mccabe.max-complexity = 20
 pylint.max-branches = 20

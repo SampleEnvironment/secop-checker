@@ -24,10 +24,12 @@
 import json
 import socket
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from typing import NoReturn
 
 
 # int-enum?
@@ -61,33 +63,38 @@ class Catastrophe(Exception):  # noqa: N818
 
 
 class DiagnosticBase:
-    def __init__(self, output):
+    def __init__(self, output: str) -> None:
         self._output = output
-        self._diags = []
+        self._diags: list[Diagnostic] = []
         self._step = ''
         self._context = Context(path=[])
         self._out = sys.stdout
 
-    def get_diags(self):
+    def get_diags(self) -> list[Diagnostic]:
         return self._diags
 
-    def set_diags(self, diags):
+    def set_diags(self, diags: list[Diagnostic]) -> None:
         self._diags = diags
 
     @contextmanager
-    def with_context(self, kind, name):
+    def with_context(self, kind: str, name: str) -> Generator:
         self._context.path.append((kind, name))
         yield
         self._context.path.pop()
 
-    def emit(self, severity, msg):
+    def emit(self, severity: Severity, msg: str) -> None:
         diag = Diagnostic(severity, self._step, deepcopy(self._context), msg)
         self._diags.append(diag)
         self._print(diag)
-        if severity == Severity.CATASTROPHIC:
-            raise Catastrophe
 
-    def _print(self, diag):
+    def emit_catastrophic(self, msg: str) -> NoReturn:
+        diag = Diagnostic(Severity.CATASTROPHIC, self._step,
+                          deepcopy(self._context), msg)
+        self._diags.append(diag)
+        self._print(diag)
+        raise Catastrophe
+
+    def _print(self, diag: Diagnostic) -> None:
         if self._output == 'json':
             self._out.write(json.dumps({
                 'severity': diag.severity.name,
@@ -105,10 +112,10 @@ class DiagnosticBase:
             self._out.write(f'{diag.severity.name}{step}: {ctx}{diag.msg}\n')
 
 
-def load_from_node(addr):
+def load_from_node(addr: str) -> tuple[str, str]:
     addr = addr.removeprefix('tcp://')
-    host, port = addr.split(':')
-    port = int(port)
+    host, port_str = addr.split(':')
+    port = int(port_str)
 
     with socket.create_connection((host, port)) as s:
         with s.makefile('rw') as sf:
