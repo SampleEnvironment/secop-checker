@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-secop-check = "secop_check.main:main"
+secop-check = "secop_check.cmdline:main"
 
 [dependency-groups]
 dev = ["pytest"]

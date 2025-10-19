@@ -4,6 +4,6 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
 
-import secop_check.main
+import secop_check.cmdline
 
-secop_check.main.main()
+secop_check.cmdline.main()

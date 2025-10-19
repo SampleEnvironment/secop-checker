@@ -22,7 +22,6 @@
 # *****************************************************************************
 
 import argparse
-import socket
 import sys
 
 import secop_check.checker
@@ -31,14 +30,14 @@ import secop_check.checker
 def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('infile', help='input file with descriptive JSON '
-                        'or a TCP address in the form host:port')
+                        'or a SEC node address in the form host:port')
     parser.add_argument('--json', action='store_true', help='output json')
     parser.add_argument('--version',
                         # TODO: other source
                         choices=['latest', '1.0', '1.1', '2.0'],
                         default='2.0',
-                        # no {default} syntax :/
-                        help='version to check against (default: %(default)s)')
+                        help='version to check against (default: %(default)s),'
+                        ' not used when loading from a node')
     parser.add_argument('--schema', action='append', default=[],
                         help='additional schema repository file to read')
     args = parser.parse_args(argv)
@@ -47,32 +46,18 @@ def parse_args(argv):
 
 def main():
     args = parse_args(sys.argv[1:])
+    version = args.version
 
     if ':' in args.infile:
-        if args.infile.startswith('tcp://'):
-            args.infile = args.infile[6:]
-        host, port = args.infile.split(':')
-        port = int(port)
-
-        with socket.create_connection((host, port)) as s:
-            with s.makefile('rw') as sf:
-                sf.write('*IDN?\n')
-                sf.write('describe\n')
-                sf.flush()
-                idn = sf.readline()
-                args.version = idn.strip().split(',')[-1].strip('vV')
-                desc = sf.readline()
-
+        version, desc = secop_check.load_from_node(args.infile)
     elif args.infile == '-':
         desc = sys.stdin.read()
-
     else:
         with open(args.infile, encoding='utf-8') as f:
             desc = f.read()
 
     try:
-        checker = secop_check.checker.Checker(args.version,
-                                              args.schema,
+        checker = secop_check.checker.Checker(version, args.schema,
                                               'json' if args.json else 'text')
         checker.check(desc)
     except secop_check.Catastrophe:

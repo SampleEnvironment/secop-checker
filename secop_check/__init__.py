@@ -22,6 +22,7 @@
 # *****************************************************************************
 
 import json
+import socket
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -93,3 +94,20 @@ class DiagnosticBase:
             if ctx:
                 ctx += ': '
             print(f'{diag.severity.name}{step}: {ctx}{diag.msg}')
+
+
+def load_from_node(addr):
+    addr = addr.removeprefix('tcp://')
+    host, port = addr.split(':')
+    port = int(port)
+
+    with socket.create_connection((host, port)) as s:
+        with s.makefile('rw') as sf:
+            sf.write('*IDN?\n')
+            sf.write('describe\n')
+            sf.flush()
+            idn = sf.readline()
+            ver = idn.strip().split(',')[-1].strip('vV')
+            desc = sf.readline()
+
+    return ver, desc
