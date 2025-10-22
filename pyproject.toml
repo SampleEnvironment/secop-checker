@@ -23,8 +23,8 @@ secop-check = "secop_check.cmdline:main"
 [dependency-groups]
 dev = ["pytest"]
 
-[tool.setuptools]
-packages = ["secop_check"]
+[tool.setuptools.packages.find]
+include = ["secop_check*"]
 
 [tool.setuptools_scm]
 
