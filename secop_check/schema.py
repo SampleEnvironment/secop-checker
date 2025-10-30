@@ -31,7 +31,11 @@ from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen
 
 if TYPE_CHECKING:
-    from types import EllipsisType
+    # keep 3.9 compatibility (after that, from types import EllipsisType)
+    import enum
+    class EllipsisType(enum.Enum):
+        Ellipsis = ...
+    Ellipsis = EllipsisType.Ellipsis  # noqa: A001
 
 import yaml
 

@@ -21,7 +21,7 @@ dependencies = [
 secop-check = "secop_check.cmdline:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "mypy", "types-PyYAML"]
 
 [tool.uv]
 cache-keys = [{file = "pyproject.toml"}, {git = {commit = true, tags = true}}]
