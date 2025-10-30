@@ -10,7 +10,7 @@ authors = [
     {name="Alexander Zaft", email="a.zaft@fz-juelich.de"},    
 ]
 license = "GPL-2.0-or-later"
-description = "Add your description here"
+description = "Schema checker for SECoP descriptive metadata"
 readme = "README.rst"
 requires-python = ">=3.9"
 dependencies = [
@@ -22,6 +22,9 @@ secop-check = "secop_check.cmdline:main"
 
 [dependency-groups]
 dev = ["pytest"]
+
+[tool.uv]
+cache-keys = [{file = "pyproject.toml"}, {git = {commit = true, tags = true}}]
 
 [tool.setuptools.packages.find]
 include = ["secop_check*"]
