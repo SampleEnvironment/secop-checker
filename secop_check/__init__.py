@@ -87,12 +87,12 @@ class DiagnosticBase:
         self._diags.append(diag)
         self._print(diag)
 
-    def emit_catastrophic(self, msg: str) -> NoReturn:
+    def emit_catastrophic(self, msg: str) -> type[Exception]:
         diag = Diagnostic(Severity.CATASTROPHIC, self._step,
                           deepcopy(self._context), msg)
         self._diags.append(diag)
         self._print(diag)
-        raise Catastrophe
+        return Catastrophe
 
     def _print(self, diag: Diagnostic) -> None:
         if self._output == 'json':

@@ -21,7 +21,8 @@ dependencies = [
 secop-check = "secop_check.cmdline:main"
 
 [dependency-groups]
-dev = ["pytest", "mypy", "types-PyYAML"]
+dev = ["pytest"]
+typing = ["mypy", "types-PyYAML", "pyright", "ty"]
 
 [tool.uv]
 cache-keys = [{file = "pyproject.toml"}, {git = {commit = true, tags = true}}]
@@ -33,7 +34,7 @@ include = ["secop_check*"]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D1", "D203", "D213", "FIX", "S101", "TD"]
+ignore = ["D1", "D203", "D213", "EM", "FIX", "S101", "TD", "TRY003"]
 flake8-quotes.inline-quotes = "single"
 mccabe.max-complexity = 20
 pylint.max-branches = 20

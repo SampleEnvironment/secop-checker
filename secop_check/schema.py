@@ -226,8 +226,8 @@ class Loader(DiagnosticBase):
             with openfunc(uri) as f:
                 data = list(yaml.safe_load_all(f))
         except Exception as err:  # noqa: BLE001
-            self.emit_catastrophic(f'could not load yaml from {uri}: {err}')
-            return
+            raise self.emit_catastrophic(
+                f'could not load yaml from {uri}: {err}') from None
 
         with self.with_context('File', uri):
             for spec in data:
@@ -247,12 +247,12 @@ class Loader(DiagnosticBase):
 
         repos = raw_objects.get('Repository', {})
         if len(repos) != 1:
-            self.emit_catastrophic('did not find exactly one '
-                                   f'schema repository in {uri}')
+            raise self.emit_catastrophic('did not find exactly one '
+                                         f'schema repository in {uri}')
         repos = next(iter(repos.values()))
         if len(repos) != 1:
-            self.emit_catastrophic('did not find exactly one '
-                                   f'schema repository in {uri}')
+            raise self.emit_catastrophic('did not find exactly one '
+                                         f'schema repository in {uri}')
         repo = next(iter(repos.values()))
 
         for filename in repo['files']:
@@ -271,7 +271,8 @@ class Loader(DiagnosticBase):
     def load(self, version: str, additional: list[str]) -> None:
         ver_root = self._root / f'version-{version}.yaml'
         if not ver_root.is_file():
-            self.emit_catastrophic(f'no root yaml found for version {version}')
+            raise self.emit_catastrophic(
+                f'no root yaml found for version {version}')
         self.load_repo(str(ver_root))
 
         for add in additional:
@@ -294,14 +295,16 @@ class Converter:
         try:
             method = getattr(self, '_mk_' + data['kind'].lower())
         except AttributeError:
-            self.loader.emit_catastrophic(
-                f'unknown yaml kind {data["kind"]} in object {data["name"]!r}')
+            raise self.loader.emit_catastrophic(
+                f'unknown yaml kind {data["kind"]} in object {data["name"]!r}') \
+                from None
         with self.loader.with_context(data['kind'], data['name']):
             return method(data)
 
     def _resolve(self, kind: type[SomeEntity], reference: object) -> SomeEntity:
         kind_name = kind.__name__
         if isinstance(reference, dict):
+            reference = cast('desc_dict', reference)
             name, props = reference.popitem()
             if reference:
                 reference[name] = props
@@ -323,17 +326,17 @@ class Converter:
             return base
 
         if not isinstance(reference, str):
-            self.loader.emit_catastrophic(
+            raise self.loader.emit_catastrophic(
                 f'invalid {kind_name} reference type {reference!r}')
 
         if ':' not in reference:
-            self.loader.emit_catastrophic(
+            raise self.loader.emit_catastrophic(
                 f'invalid {kind_name} reference {reference!r}')
         name, version_str = reference.split(':')
         try:
             version = int(version_str)
         except ValueError:
-            self.loader.emit(Severity.ERROR, f'invalid version {version}')
+            self.loader.emit(Severity.ERROR, f'invalid version {version_str}')
             version = 0
 
         if done := self.inv.get(kind, name, version):
@@ -342,9 +345,9 @@ class Converter:
         try:
             obj = self.raw[kind_name][name][version]
         except KeyError:
-            self.loader.emit_catastrophic(
-                f'could not resolve {kind_name} reference {name}:{version}')
-            return cast('SomeEntity', None)  # unreachable
+            raise self.loader.emit_catastrophic(
+                f'could not resolve {kind_name} reference {name}:{version}') \
+                from None
         else:
             schema_obj = self.convert(obj)
             self.inv.add(schema_obj)
@@ -355,11 +358,11 @@ class Converter:
         if key in data:
             if isinstance(data[key], typ):
                 return data[key]
-            self.loader.emit_catastrophic(
+            raise self.loader.emit_catastrophic(
                 f'expected {key} to be of type {typ}, but '
                 f'got {type(data[key])}')
         if default is Ellipsis:
-            self.loader.emit_catastrophic(f'missing key {key!r}')
+            raise self.loader.emit_catastrophic(f'missing key {key!r}')
         return cast('V', default)
 
     def _validate_datainfotype(self, name: str) -> None:
@@ -367,35 +370,34 @@ class Converter:
         if name == 'any':
             return
         if not self.raw.get('Datainfo', name):
-            self.loader.emit_catastrophic(
+            raise self.loader.emit_catastrophic(
                 f'no datainfo type with name {name!r} exists')
 
     def _get_datainfo(self, data: desc_dict, key: str) -> dict[str, Any]:
         if spec := data.get(key):
             if isinstance(spec, dict):
                 if 'type' not in spec:
-                    self.loader.emit_catastrophic(
+                    raise self.loader.emit_catastrophic(
                         f'missing "type" in datainfo spec for {key!r}')
                 self._validate_datainfotype(spec['type'])
                 return spec
             if isinstance(spec, str):
                 self._validate_datainfotype(spec)
                 return {'type': spec}
-            self.loader.emit_catastrophic(
+            raise self.loader.emit_catastrophic(
                 f'expected {key} to be of type dict or str, but '
                 f'got {type(data[key])}')
-        self.loader.emit_catastrophic(f'missing key {key!r}')
-        return None
+        raise self.loader.emit_catastrophic(f'missing key {key!r}')
 
     def _get_dataty(self, data: desc_dict, key: str) -> Dataty:
         if spec := data.get(key):
             try:
                 return Dataty.from_desc(spec)
             except ValueError:
-                self.loader.emit_catastrophic(
-                    f'invalid dataty specification for {key!r}: {spec!r}')
-        self.loader.emit_catastrophic(f'missing key {key!r}')
-        return None
+                raise self.loader.emit_catastrophic(
+                    f'invalid dataty specification for {key!r}: {spec!r}') \
+                    from None
+        raise self.loader.emit_catastrophic(f'missing key {key!r}')
 
     def _mk_repository(self, data: desc_dict) -> Repository:
         repo = Repository(

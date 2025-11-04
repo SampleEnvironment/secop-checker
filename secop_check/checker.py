@@ -67,16 +67,17 @@ class Checker(DiagnosticBase):
         try:
             desc_obj = json.loads(desc)
         except json.JSONDecodeError as e:
-            self.emit_catastrophic(f'invalid json at line {e.lineno} '
-                                   f'column {e.colno}:\n{e.msg}')
+            raise self.emit_catastrophic(
+                f'invalid json at line {e.lineno} column {e.colno}:\n{e.msg}') \
+                from None
 
         schemata = desc_obj.get('schemata', {})
         for uri in schemata:
             self.loader.load_repo(uri)
 
         if self._diags:
-            self.emit_catastrophic('found errors loading spec to '
-                                   'validate against, exiting')
+            raise self.emit_catastrophic('found errors loading spec to '
+                                         'validate against, exiting')
 
         self.visit_descriptive_data(desc_obj)
 
