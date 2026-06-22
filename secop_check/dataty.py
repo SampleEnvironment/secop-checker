@@ -210,6 +210,8 @@ class Struct(Dataty):
             for key, fieldtype in self.fieldtypes.items():
                 if key not in value and key not in self.optional:
                     return False
+                if key not in value:
+                    continue
                 if not fieldtype.validate(value[key]):
                     return False
         return True
