@@ -27,6 +27,8 @@ import re
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from . import Severity
+from .context import ConstantValue
+from .context import Property as CtxProperty
 from .dataty import Dataty
 from .schema import (
     Command,
@@ -99,7 +101,7 @@ class BasicStructureChecker(BaseVisitor):
 
     def visit_secnode(self, description: desc_dict) -> None:
         if 'modules' not in description:
-            self.checker.emit(Severity.ERROR, 'missing modules dict')
+            self.checker.emit(Severity.ERROR, 'missing dict of modules')
             description['modules'] = {}
 
     def visit_module(self, name: str, description: desc_dict) -> None:
@@ -171,7 +173,7 @@ class InterfaceChecker(BaseVisitor):
 
             if not self.inv.is_global(kind, clsname):
                 self.checker.emit(Severity.ERROR,
-                                  f'declares unknown {kind}: {clsname}')
+                                  f'declares unknown {kind.__name__}: {clsname!r}')
                 return
 
             clsdef = cast('IFT', self.inv.get(kind, clsname))
@@ -186,8 +188,10 @@ class InterfaceChecker(BaseVisitor):
                 self.checker.add_acc_properties(name, par.name, par.properties)
             for cmd in clsdef.commands:
                 self.checker.add_acc_properties(name, cmd.name, cmd.properties)
-            if isinstance(kind, type(Interface)) and clsdef.base is not None:
-                add_baseclass(Interface, clsdef.base.name)
+            if isinstance(kind, type(Interface)):
+                clsdef = cast('Interface', clsdef)
+                if clsdef.base is not None:
+                    add_baseclass(Interface, clsdef.base.name)
 
         for iface in description.get('interface_classes', []):
             add_baseclass(Interface, iface)
@@ -206,26 +210,27 @@ class BasePropsChecker(BaseVisitor):
             if member == skip:
                 continue
             required.discard(member)
-            if member not in props:
-                if not member.startswith('_'):
-                    self.checker.emit(
-                        Severity.WARNING,
-                        f"{member}: non-standard properties need '_' as a prefix",
-                    )
-            else:
-                with self.checker.with_context('Property', member):
+            with self.checker.with_context(CtxProperty(member)):
+                if member not in props:
+                    if not member.startswith('_'):
+                        self.checker.emit(
+                            Severity.WARNING,
+                            "non-standard properties need '_' as a prefix",
+                        )
+                else:
                     self.checker.check_dataty(props[member][0].dataty, mvalue)
-                if props[member][0].forced_value is not None and \
-                   mvalue != props[member][0].forced_value:
-                    self.checker.emit(Severity.ERROR,
-                        f'property has forced value '
-                        f'{props[member][0].forced_value!r}, got {mvalue!r}')
+                    if props[member][0].forced_value is not None and \
+                       mvalue != props[member][0].forced_value:
+                        self.checker.emit(
+                            Severity.ERROR,
+                            f'property has forced value '
+                            f'{props[member][0].forced_value!r}, got {mvalue!r}')
 
         if required:
             self.checker.emit(
                 Severity.ERROR,
-                f'missing required properties: {required}',
-            )
+                'missing required properties: '
+                f"{', '.join(map(repr, required))}")
 
     def visit_secnode(self, description: desc_dict) -> None:
         self.check_props(description,
@@ -276,6 +281,13 @@ class AccessibleChecker(BaseVisitor):
                     f'missing required command {cname} from {from_}',
                 )
 
+    def _get_value_datainfo(self) -> desc_dict | None:
+        if self._current_moddesc:
+            value_acc = self._current_moddesc.get('accessibles', {}).get('value')
+            if value_acc is not None:
+                return value_acc.get('datainfo')
+        return None
+
     def check_datainfo_template(self,
                                 should: str | desc_dict,
                                 actual: desc_dict,
@@ -284,6 +296,9 @@ class AccessibleChecker(BaseVisitor):
 
         Does not check the datainfo itself for validity, this was done in
         BasePropsChecker.
+
+        `parent` is the datainfo of the parameter that this one is derived
+        from, if any. It is used to check for the special "parent" type.
         """
         if should == 'any':
             return
@@ -296,7 +311,7 @@ class AccessibleChecker(BaseVisitor):
             aval = actual.get(key)
             if aval is None:
                 self.checker.emit(Severity.ERROR,
-                                  f'missing required datainfo key {key}')
+                                  f'missing required datainfo key {key!r}')
                 continue
             if should['type'] == 'array' and key == 'members':
                 self.check_datainfo_template(kval, aval, parent)
@@ -362,14 +377,14 @@ class AccessibleChecker(BaseVisitor):
                 return
         else:
             should = should_src[0]
-            parent_datainfo = None
+            parent_datainfo = self._get_value_datainfo()
 
         # special case: check "constant" parameter value
         if 'constant' in description:
             if not description.get('readonly'):
                 self.checker.emit(Severity.WARNING,
                                   'constant parameters should be readonly')
-            with self.checker.with_context('constant value', ''):
+            with self.checker.with_context(ConstantValue()):
                 try:
                     ty = Dataty.from_desc(description['datainfo'])
                 except ValueError:
@@ -397,15 +412,16 @@ class AccessibleChecker(BaseVisitor):
                 )
             return
         should = should_src[0]
+        parent_datainfo = self._get_value_datainfo()
 
         if 'argument' in description['datainfo']:
             if should.argument == {'type': 'none'}:
                 self.checker.emit(Severity.WARNING,
                                   'command should not have an argument')
             else:
-                # TODO: determine and pass parent datainfo
                 self.check_datainfo_template(
-                    should.argument, description['datainfo']['argument'], None)
+                    should.argument, description['datainfo']['argument'],
+                    parent_datainfo)
         elif should.argument != {'type': 'none'}:
             self.checker.emit(Severity.WARNING,
                               'command should have an argument: '
@@ -416,9 +432,9 @@ class AccessibleChecker(BaseVisitor):
                 self.checker.emit(Severity.WARNING,
                                   'command should not have a result')
             else:
-                # TODO: determine and pass parent datainfo
                 self.check_datainfo_template(
-                    should.result, description['datainfo']['result'], None)
+                    should.result, description['datainfo']['result'],
+                    parent_datainfo)
         elif should.result != {'type': 'none'}:
             self.checker.emit(Severity.WARNING,
                               'command should have a result: '

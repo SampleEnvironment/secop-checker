@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from . import DiagnosticBase, Severity
+from . import context as ctx
 from .dataty import Datainfo as DatatyDatainfo
 from .schema import Command, Datainfo, Inventory, Loader, Parameter, Property
 from .visitors import VISITORS, BaseVisitor
@@ -132,23 +133,23 @@ class Checker(DiagnosticBase):
             return
         if 'type' not in description:
             self.emit(Severity.ERROR, 'datainfo does not have a type')
-            description['type'] = 'unknown'
+            return
 
         descty = description['type']
 
         # handle commands recursively
         if descty == 'command':
             if 'argument' in description:
-                with self.with_context('argument', ''):
+                with self.with_context(ctx.Argument()):
                     self.check_datainfo(description['argument'])
             if 'result' in description:
-                with self.with_context('result', ''):
+                with self.with_context(ctx.Result()):
                     self.check_datainfo(description['result'])
             return
 
         basic = self._inv.get(Datainfo, descty)
         if basic is None:
-            self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
+            self.emit(Severity.ERROR, f'unknown datainfo type {descty!r}')
             return
 
         actual_dprops = set(description) - {'type'}
@@ -157,9 +158,9 @@ class Checker(DiagnosticBase):
                 if not dpropdesc.optional:
                     self.emit(Severity.ERROR,
                               'missing required property for datainfo '
-                              f'{descty}: {dprop}')
+                              f'{descty}: {dprop!r}')
             else:
-                with self.with_context('datainfo ' + descty, dprop):
+                with self.with_context(ctx.Datainfo(descty, dprop)):
                     self.check_dataty(dpropdesc.dataty, description[dprop])
             actual_dprops.discard(dprop)
 
@@ -174,18 +175,19 @@ class Checker(DiagnosticBase):
             self.visit_with(desc, visitorcls(self))
 
     def visit_with(self, desc: desc_dict, visitor: BaseVisitor) -> None:
-        with self.with_context('SECNode', ''):
+        # TODO: better context for the SECNode itself, e.g. the file/host
+        with self.with_context(ctx.SECNode()):
             visitor.visit_secnode(desc)
 
             for prop, propdesc in desc.items():
                 if prop == 'modules':
                     for module, moddesc in propdesc.items():
-                        with self.with_context('Module', module):
+                        with self.with_context(ctx.Module(module)):
                             self._visit_module(module, moddesc, visitor)
 
                 # other node properties
                 else:
-                    with self.with_context('Property', prop):
+                    with self.with_context(ctx.Property(prop)):
                         visitor.visit_property('SECNode', prop, propdesc)
 
             visitor.finish()
@@ -198,23 +200,25 @@ class Checker(DiagnosticBase):
             if prop == 'accessibles':
                 for accname, accdesc in propdesc.items():
                     datainfo = accdesc.get('datainfo', {})
-                    ty = 'Command' if datainfo.get('type') == 'command' \
-                        else 'Parameter'
-                    with self.with_context(ty, accname):
-                        if ty == 'Command':
+                    is_command = datainfo.get('type') == 'command'
+                    ty = 'Command' if is_command else 'Parameter'
+                    ctx_item = ctx.Command(accname) if is_command \
+                        else ctx.Parameter(accname)
+                    with self.with_context(ctx_item):
+                        if is_command:
                             visitor.visit_command(modname, accname, accdesc)
                         else:
                             visitor.visit_parameter(modname, accname, accdesc)
 
                         for aprop, apropdesc in accdesc.items():
-                            with self.with_context('Property', aprop):
+                            with self.with_context(ctx.Property(aprop)):
                                 visitor.visit_property(ty, aprop, apropdesc)
 
                         visitor.finish_accessible(accdesc)
 
             # other module properties
             else:
-                with self.with_context('Property', prop):
+                with self.with_context(ctx.Property(prop)):
                     visitor.visit_property('Module', prop, propdesc)
 
             visitor.finish_module(modname)

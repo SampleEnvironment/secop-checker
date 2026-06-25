@@ -21,14 +21,21 @@
 #
 # *****************************************************************************
 
+from __future__ import annotations
+
 import json
 import socket
 import sys
-from collections.abc import Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from .context import ContextItem
 
 
 # int-enum?
@@ -45,7 +52,7 @@ class Severity(Enum):
 
 @dataclass
 class Context:
-    path: list[tuple[str, str]]
+    path: list[ContextItem]
     # system?
 
 
@@ -76,8 +83,8 @@ class DiagnosticBase:
         self._diags = diags
 
     @contextmanager
-    def with_context(self, kind: str, name: str) -> Generator:
-        self._context.path.append((kind, name))
+    def with_context(self, item: ContextItem) -> Generator:
+        self._context.path.append(item)
         yield
         self._context.path.pop()
 
@@ -99,13 +106,12 @@ class DiagnosticBase:
                 'severity': diag.severity.name,
                 'step': diag.step,
                 'msg': diag.msg,
-                'ctx': diag.ctx.path,
+                'ctx': [str(item) for item in diag.ctx.path],
             }))
             self._out.write('\n')
         elif self._output == 'text':
             step = f' [{diag.step}]' if diag.step else ''
-            ctx = ' / '.join(f'{ty} {name}'.strip()
-                             for ty, name in diag.ctx.path).strip()
+            ctx = ' / '.join(str(item) for item in diag.ctx.path).strip()
             if ctx:
                 ctx += ': '
             self._out.write(f'{diag.severity.name}{step}: {ctx}{diag.msg}\n')

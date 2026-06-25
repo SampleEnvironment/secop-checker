@@ -103,8 +103,8 @@ class Int(Dataty):
     maximum = None
 
     def __init__(self, dct: dict[str, Any]) -> None:
-        self.minimum = dct.get('minimum')
-        self.maximum = dct.get('maximum')
+        self.minimum = dct.get('min')
+        self.maximum = dct.get('max')
 
     def validate(self, value: object) -> bool:
         if not (isinstance(value, int) or

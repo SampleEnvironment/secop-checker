@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 import yaml
 
 from . import DiagnosticBase, Severity
+from .context import File, Generic
 from .dataty import Dataty
 
 COMMON_META = {'kind', 'name', 'version', 'description'}
@@ -229,7 +230,7 @@ class Loader(DiagnosticBase):
             raise self.emit_catastrophic(
                 f'could not load yaml from {uri}: {err}') from None
 
-        with self.with_context('File', uri):
+        with self.with_context(File(uri)):
             for spec in data:
                 # check for required fields for all objects
                 for req in COMMON_META:
@@ -298,7 +299,7 @@ class Converter:
             raise self.loader.emit_catastrophic(
                 f'unknown yaml kind {data["kind"]} in object {data["name"]!r}') \
                 from None
-        with self.loader.with_context(data['kind'], data['name']):
+        with self.loader.with_context(Generic(data['kind'], data['name'])):
             return method(data)
 
     def _resolve(self, kind: type[SomeEntity], reference: object) -> SomeEntity:
@@ -308,7 +309,7 @@ class Converter:
             name, props = reference.popitem()
             if reference:
                 reference[name] = props
-                self.loader.emit_catastrophic(
+                raise self.loader.emit_catastrophic(
                     f'invalid reference {reference}, needs to be '
                     'a 1-element dictionary')
             if 'definition' not in props:
@@ -367,9 +368,9 @@ class Converter:
 
     def _validate_datainfotype(self, name: str) -> None:
         """Ensure that a datainfo with the given name is registered."""
-        if name == 'any':
+        if name in ('any', 'none', 'parent', 'number'):
             return
-        if not self.raw.get('Datainfo', name):
+        if name not in self.raw.get('Datainfo', {}):
             raise self.loader.emit_catastrophic(
                 f'no datainfo type with name {name!r} exists')
 

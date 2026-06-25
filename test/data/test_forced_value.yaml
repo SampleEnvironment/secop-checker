@@ -1,0 +1,29 @@
+---
+kind: Repository
+name: "TestForcedValue"
+version: 1
+description: "Test fixture for forced-value property checking"
+files: []
+systems: []
+interfaces: []
+features: []
+parameters: []
+postfixes: []
+commands: []
+properties:
+  SECNode: []
+  System: []
+  Module:
+    - testprop:1
+  Parameter: []
+  Command: []
+datainfo: []
+
+---
+kind: Property
+name: testprop
+version: 1
+dataty: string
+optional: true
+value: "must_be_this"
+description: "A test property with a forced value"
