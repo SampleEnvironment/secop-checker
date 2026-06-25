@@ -257,8 +257,10 @@ class AccessibleChecker(BaseVisitor):
     """
 
     name = 'accessibles'
+    _current_moddesc: desc_dict | None = None
 
     def visit_module(self, name: str, description: desc_dict) -> None:
+        self._current_moddesc = description
         for pname, (parspec, from_) in self.checker.get_parameters(name).items():
             if from_ and not parspec.optional and \
                pname not in description['accessibles']:
@@ -337,9 +339,19 @@ class AccessibleChecker(BaseVisitor):
                 if name.endswith(postfix):
                     should = Parameter.from_postfix(name, pf_defs[0])
 
-                    # TODO: make sure the non-postfixed parameter exists
-                    # and figure out its datainfo
+                    base_name = name[:-len(postfix)]
                     parent_datainfo = None
+                    base_acc = self._current_moddesc.get(
+                        'accessibles', {}).get(base_name) \
+                        if self._current_moddesc else None
+                    if base_acc is not None:
+                        parent_datainfo = base_acc.get('datainfo')
+                    else:
+                        self.checker.emit(
+                            Severity.ERROR,
+                            f'postfixed parameter {name!r} requires '
+                            f'non-postfixed parameter {base_name!r}',
+                        )
                     break
             else:
                 if not name.startswith('_'):
@@ -391,6 +403,7 @@ class AccessibleChecker(BaseVisitor):
                 self.checker.emit(Severity.WARNING,
                                   'command should not have an argument')
             else:
+                # TODO: determine and pass parent datainfo
                 self.check_datainfo_template(
                     should.argument, description['datainfo']['argument'], None)
         elif should.argument != {'type': 'none'}:
@@ -403,6 +416,7 @@ class AccessibleChecker(BaseVisitor):
                 self.checker.emit(Severity.WARNING,
                                   'command should not have a result')
             else:
+                # TODO: determine and pass parent datainfo
                 self.check_datainfo_template(
                     should.result, description['datainfo']['result'], None)
         elif should.result != {'type': 'none'}:
