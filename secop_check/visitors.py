@@ -299,7 +299,8 @@ class AccessibleChecker(BaseVisitor):
             if should['type'] == 'array' and key == 'members':
                 self.check_datainfo_template(kval, aval, parent)
             elif should['type'] == 'tuple' and key == 'members':
-                for _i, (kval_item, aval_item) in enumerate(zip(kval, aval)):
+                for _i, (kval_item, aval_item) in \
+                        enumerate(zip(kval, aval, strict=False)):
                     self.check_datainfo_template(kval_item, aval_item, parent)
             elif should['type'] == 'struct' and key == 'members':
                 for kval_key, kval_item in kval.items():

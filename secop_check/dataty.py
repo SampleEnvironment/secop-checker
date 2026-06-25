@@ -176,7 +176,7 @@ class Tuple(Dataty):
         if len(value) != len(self.itemtypes):
             return False
         return all(itemtype.validate(item)
-                   for itemtype, item in zip(self.itemtypes, value))
+                   for itemtype, item in zip(self.itemtypes, value, strict=True))
 
     def describe(self) -> str:
         if self.itemtypes is None:

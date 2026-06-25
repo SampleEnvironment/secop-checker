@@ -1,5 +1,8 @@
 #!/usr/bin/env -S uv run --script
 import os
+print('--- mypy ---')
 os.system('uv run --group typing mypy secop_check')
+print('--- pyright ---')
 os.system('uv run --group typing pyright secop_check')
+print('--- ty ---')
 os.system('uv run --group typing ty check --output-format concise')

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from . import DiagnosticBase, Severity
 from .dataty import Datainfo as DatatyDatainfo
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from .dataty import Dataty
 
 desc_dict = dict[str, Any]
-source = Union[str, None]
+source = str | None
 
 
 class Checker(DiagnosticBase):

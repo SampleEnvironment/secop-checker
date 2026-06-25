@@ -12,7 +12,7 @@ authors = [
 license = "GPL-2.0-or-later"
 description = "Schema checker for SECoP descriptive metadata"
 readme = "README.rst"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=5.4",
 ]
@@ -21,7 +21,7 @@ dependencies = [
 secop-check = "secop_check.cmdline:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "ruff"]
 typing = ["mypy", "types-PyYAML", "pyright", "ty"]
 
 [tool.uv]
