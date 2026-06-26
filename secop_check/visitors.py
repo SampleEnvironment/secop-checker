@@ -307,7 +307,30 @@ class AccessibleChecker(BaseVisitor):
         if isinstance(should, str):
             should = {'type': should}
 
+        # check type first, then other keys
+        if 'type' in should:
+            kval = should['type']
+            aval = actual.get('type')
+            if aval is None:
+                self.checker.emit(Severity.ERROR,
+                                  "missing required datainfo key 'type'")
+                return
+
+            # handle special cases
+            if kval == 'any' or \
+               (kval == 'number' and aval in ('double', 'scaled', 'int')) or \
+               (kval == 'double' and aval == 'scaled'):
+                aval = kval
+
+            if kval != aval:
+                self.checker.emit(Severity.ERROR,
+                                  f'expected datainfo type {kval!r}, '
+                                  f'got {aval!r}')
+                return
+
         for key, kval in should.items():
+            if key == 'type':
+                continue
             aval = actual.get(key)
             if aval is None:
                 self.checker.emit(Severity.ERROR,
@@ -328,21 +351,10 @@ class AccessibleChecker(BaseVisitor):
                         self.check_datainfo_template(kval_item,
                                                      aval[kval_key],
                                                      parent)
-            elif key == 'type':
-                # handle special cases
-                if kval == 'any' or \
-                   (kval == 'number' and aval in ('double', 'scaled', 'int')) or \
-                   (kval == 'double' and aval == 'scaled'):
-                    aval = kval
-
-                if kval != aval:
-                    self.checker.emit(Severity.ERROR,
-                                      f'expected datainfo {key} {kval}, '
-                                      f'got {aval!r}')
             else:  # noqa: PLR5501
                 if kval != aval:
                     self.checker.emit(Severity.ERROR,
-                                      f'expected datainfo {key} {kval}, '
+                                      f'expected datainfo {key} {kval!r}, '
                                       f'got {aval!r}')
 
     def visit_parameter(self, modname: str, name: str,

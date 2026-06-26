@@ -321,7 +321,8 @@ class TestDatainfoTemplate:
         d = deepcopy(READABLE)
         d['modules']['m']['accessibles']['status']['datainfo'] = {'type': 'tuple'}
         assert_has(check(d),
-                   (ERROR, "missing required property for datainfo type tuple: 'members'",
+                   (ERROR,
+                    "missing required property for datainfo type tuple: 'members'",
                     'Module m:Parameter status:Property datainfo'),
                    (ERROR, "missing required datainfo key 'members'",
                     'Module m:Parameter status'))
@@ -331,9 +332,7 @@ class TestDatainfoTemplate:
         d = deepcopy(READABLE)
         d['modules']['m']['accessibles']['status']['datainfo'] = {'type': 'string'}
         assert_has(check(d),
-                   (ERROR, "expected datainfo type tuple, got 'string'",
-                    'Module m:Parameter status'),
-                   (ERROR, "missing required datainfo key 'members'",
+                   (ERROR, "expected datainfo type 'tuple', got 'string'",
                     'Module m:Parameter status'))
 
     def test_datainfo_nested_type_mismatch(self):
@@ -346,7 +345,8 @@ class TestDatainfoTemplate:
                 {'type': 'string'},
             ],
         }
-        assert_has(check(d), (ERROR, "expected datainfo type enum, got 'string'",
+        assert_has(check(d), (ERROR,
+                              "expected datainfo type 'enum', got 'string'",
                               'Module m:Parameter status'))
 
     def test_pollinterval_type_mismatch(self):
@@ -362,7 +362,8 @@ class TestDatainfoTemplate:
             },
         }
         d['modules']['m']['interface_classes'] = ['Readable']
-        assert_has(check(d), (ERROR, "expected datainfo type double, got 'string'",
+        assert_has(check(d), (ERROR,
+                              "expected datainfo type 'double', got 'string'",
                               'Module m:Parameter pollinterval'))
 
     def test_datainfo_any_pass(self):
@@ -480,7 +481,7 @@ class TestPostfixedParams:
                    (ERROR, "postfixed parameter 'value_min' requires "
                     "non-postfixed parameter 'value'",
                     'Module m:Parameter value_min'),
-                   (ERROR, "expected datainfo type parent, got 'double'",
+                   (ERROR, "expected datainfo type 'parent', got 'double'",
                     'Module m:Parameter value_min'))
 
     def test_valid_postfixed_param(self):

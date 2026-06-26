@@ -8,3 +8,5 @@ check context in test methds.
 - "100" in enum value not caught
 
 - defs problem: * "escription" => TB, * "arameters" => nothing
+
+- mode for hinting at possible other properties?

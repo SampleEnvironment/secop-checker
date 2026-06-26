@@ -32,7 +32,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
 
-from . import Catastrophe, Severity, _SEVERITY_COLORS, load_from_node
+from . import _SEVERITY_COLORS, Catastrophe, Severity, load_from_node
 from . import context as ctx
 from .checker import Checker
 
