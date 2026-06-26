@@ -154,6 +154,7 @@ def assert_has(diags: list[Diag],
 
 HERE = Path(__file__).parent
 FORCED_VALUE_FIXTURE = str(HERE / 'data' / 'test_forced_value.yaml')
+COMPOUND_DI_FIXTURE = str(HERE / 'data' / 'test_compound_datainfo_types.yaml')
 
 
 class TestCheckEntryPoint:
@@ -313,6 +314,86 @@ class TestDatainfoStructure:
                    (WARNING,
                     "unknown properties given for datainfo type double: 'garbage'",
                     'Module m:Parameter value:Property datainfo'))
+
+    def test_bad_enum_in_tuple_members(self):
+        """Array(Datainfo): nested datainfo inside tuple is validated."""
+        d = deepcopy(MIN)
+        d['modules']['m']['accessibles']['_x'] = {
+            'description': 'x',
+            'datainfo': {
+                'type': 'tuple',
+                'members': [
+                    {'type': 'enum', 'members': {'IDLE': 100}},
+                    {'type': 'enum', 'members': {'BAD': 'not_int'}},
+                ],
+            },
+            'readonly': True,
+        }
+        assert_has(check(d),
+                   (ERROR, "expected struct with str names and values of "
+                    "type: integer, got {'BAD': 'not_int'}",
+                    'Module m:Parameter _x:Property datainfo'
+                    ':datainfo tuple members:datainfo enum members'))
+
+    def test_bad_enum_in_struct_members(self):
+        """Struct(fieldtype=Datainfo): nested datainfo inside struct is validated."""
+        d = deepcopy(MIN)
+        d['modules']['m']['accessibles']['_x'] = {
+            'description': 'x',
+            'datainfo': {
+                'type': 'struct',
+                'members': {
+                    'field1': {'type': 'enum', 'members': {'a': 1}},
+                    'field2': {'type': 'enum', 'members': {'b': 'bad'}},
+                },
+            },
+            'readonly': True,
+        }
+        assert_has(check(d),
+                   (ERROR, "expected struct with str names and values of "
+                    "type: integer, got {'b': 'bad'}",
+                    'Module m:Parameter _x:Property datainfo'
+                    ':datainfo struct members:datainfo enum members'))
+
+    def test_bad_enum_in_tuple_dataprop(self):
+        """Tuple(Datainfo...): datainfo inside tuple-typed dataprop is validated."""
+        d = deepcopy(MIN)
+        d['modules']['m']['accessibles']['_x'] = {
+            'description': 'x',
+            'datainfo': {
+                'type': 'test_tuple_di',
+                'items': [
+                    {'type': 'enum', 'members': {'BAD': 'not_int'}},
+                    'some_string',
+                ],
+            },
+            'readonly': True,
+        }
+        assert_has(check(d, COMPOUND_DI_FIXTURE),
+                   (ERROR, "expected struct with str names and values of "
+                    "type: integer, got {'BAD': 'not_int'}",
+                    'Module m:Parameter _x:Property datainfo'
+                    ':datainfo test_tuple_di items:datainfo enum members'))
+
+    def test_bad_enum_in_named_struct_dataprop(self):
+        """Struct(fieldtypes=...): validates nested datainfo in named struct."""
+        d = deepcopy(MIN)
+        d['modules']['m']['accessibles']['_x'] = {
+            'description': 'x',
+            'datainfo': {
+                'type': 'test_struct_di',
+                'items': {
+                    'field1': {'type': 'enum', 'members': {'a': 'bad'}},
+                    'field2': 'some_string',
+                },
+            },
+            'readonly': True,
+        }
+        assert_has(check(d, COMPOUND_DI_FIXTURE),
+                   (ERROR, "expected struct with str names and values of "
+                    "type: integer, got {'a': 'bad'}",
+                    'Module m:Parameter _x:Property datainfo'
+                    ':datainfo test_struct_di items:datainfo enum members'))
 
 
 class TestDatainfoTemplate:

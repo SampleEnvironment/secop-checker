@@ -29,7 +29,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 from . import DiagnosticBase, Severity
 from . import context as ctx
+from .dataty import Array as DatatyArray
 from .dataty import Datainfo as DatatyDatainfo
+from .dataty import Struct as DatatyStruct
+from .dataty import Tuple as DatatyTuple
 from .schema import Command, Datainfo, Inventory, Loader, Parameter, Property
 from .visitors import VISITORS, BaseVisitor
 
@@ -123,8 +126,31 @@ class Checker(DiagnosticBase):
         if not dataty.validate(actual):
             self.emit(Severity.ERROR,
                       f'expected {dataty.describe()}, got {actual!r}')
+            return
         if isinstance(dataty, DatatyDatainfo):
             self.check_datainfo(cast('dict', actual))
+        elif isinstance(dataty, DatatyArray) \
+                and isinstance(dataty.itemtype, DatatyDatainfo):
+            items = cast('list', actual)
+            for item in items:
+                self.check_datainfo(cast('dict', item))
+        elif isinstance(dataty, DatatyTuple) and dataty.itemtypes:
+            items = cast('list', actual)
+            for itemtype, item in zip(dataty.itemtypes, items,
+                                      strict=False):
+                if isinstance(itemtype, DatatyDatainfo):
+                    self.check_datainfo(cast('dict', item))
+        elif isinstance(dataty, DatatyStruct):
+            actual_dict = cast('dict', actual)
+            if dataty.fieldtype is not None \
+                    and isinstance(dataty.fieldtype, DatatyDatainfo):
+                for val in actual_dict.values():
+                    self.check_datainfo(cast('dict', val))
+            elif dataty.fieldtypes:
+                for key, fieldtype in dataty.fieldtypes.items():
+                    if isinstance(fieldtype, DatatyDatainfo) \
+                            and key in actual_dict:
+                        self.check_datainfo(cast('dict', actual_dict[key]))
 
     def check_datainfo(self, description: desc_dict) -> None:
         """Check validity of a datainfo description."""
