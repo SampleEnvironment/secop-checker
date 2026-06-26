@@ -22,15 +22,27 @@
 # *****************************************************************************
 
 import argparse
+import json
+import re
 import sys
 
-import secop_check.checker
+from rich.console import Console
+from rich.highlighter import JSONHighlighter
+from rich.panel import Panel
+from rich.text import Text
+from rich.theme import Theme
+
+from . import Catastrophe, Severity, _SEVERITY_COLORS, load_from_node
+from . import context as ctx
+from .checker import Checker
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('infile', help='input file with descriptive JSON '
                         'or a SEC node address in the form host:port')
+    parser.add_argument('-a', '--annotate', action='store_true',
+                        help='annotate diagnostics onto pretty-printed JSON')
     parser.add_argument('--json', action='store_true', help='output json')
     parser.add_argument('--version',
                         # TODO: other source
@@ -43,21 +55,150 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _build_line_map(text: str) -> dict[str, int]:
+    lines = text.splitlines()
+    path: list[str] = []
+    line_map: dict[str, int] = {}
+    for i, line in enumerate(lines):
+        m = re.match(r'^(\s*)"([^"]+)":', line)
+        if not m:
+            continue
+        key = m.group(2)
+        depth = len(m.group(1)) // 2
+        while len(path) >= depth:
+            path.pop()
+        path.append(key)
+        line_map['.'.join(path)] = i
+    return line_map
+
+
+def _ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> str | None:
+    parts: list[str] = []
+    for item in ctxpath:
+        if isinstance(item, ctx.Module):
+            parts += ['modules', item.name]
+        elif isinstance(item, ctx.Property):
+            parts.append(item.name)
+        elif isinstance(item, (ctx.Parameter, ctx.Command)):
+            parts += ['accessibles', item.name]
+        elif isinstance(item, ctx.ConstantValue):
+            parts.append('constant')
+        elif isinstance(item, ctx.Argument):
+            parts.append('argument')
+        elif isinstance(item, ctx.Result):
+            parts.append('result')
+        elif isinstance(item, ctx.Datainfo):
+            parts.append('datainfo')
+            if item.name:
+                parts.append(item.name)
+        else:
+            # SECNode (root), File, Generic → skip
+            pass
+    return '.'.join(parts)
+
+
+def _render_summary(checker: Checker, console: Console) -> None:
+    diags = checker.get_diags()
+    if not diags:
+        console.print()
+        console.print(Panel(
+            '[green]No issues found with the description.[/green]',
+            title=' Summary ',
+            border_style='green'))
+        return
+
+    highest = max(d.severity for d in diags)
+    border_color = _SEVERITY_COLORS[highest]
+
+    counts = dict.fromkeys(Severity, 0)
+    for d in diags:
+        counts[d.severity] += 1
+
+    content = Text()
+    content.append('Found issues with the description:\n')
+    for sev in (Severity.ERROR, Severity.WARNING, Severity.HINT):
+        c = counts[sev]
+        if not c:
+            continue
+        if content:
+            content.append('   ')
+        content.append(f'{sev.name}s: {c}', style=_SEVERITY_COLORS[sev])
+
+    console.print()
+    console.print(Panel(content, title=' Summary ',
+                        border_style=border_color))
+
+
+def _render_annotated(checker: Checker, raw_json: str) -> None:
+    obj = json.loads(raw_json)
+    text = json.dumps(obj, indent=2)
+    line_map = _build_line_map(text)
+    lines = text.splitlines()
+    num_width = len(str(len(lines))) + 3
+
+    # Group diagnostics by JSON-path → line
+    line_diags: dict[int, list] = {}
+    for d in checker.get_diags():
+        path = _ctx_to_json_path(d.ctx.path)
+        if path not in line_map:
+            continue
+        line = line_map[path]
+        line_diags.setdefault(line + 1, []).append(d)
+
+    highlighter = JSONHighlighter()
+    console = Console(theme=Theme({'json.key': 'blue'}))
+    sep_prefix = ' ' * (num_width + 1) + '│'
+    for i, line_text in enumerate(lines, 1):
+        row = Text()
+        row.append(f'{i:>{num_width}} │ ', style='dim')
+        hl = Text(line_text)
+        highlighter.highlight(hl)
+        hl.stylize('dim')
+        row.append(hl)
+        console.print(row)
+        if i in line_diags:
+            leading = len(line_text) - len(line_text.lstrip())
+            for d in line_diags[i]:
+                sev_color = _SEVERITY_COLORS[d.severity]
+                ann = Text()
+                ann.append('●', style=sev_color)
+                ann.append(' ' * num_width + '│' + ' ' * (leading + 1),
+                           style='dim')
+                ann.append(f'╰─ {d.severity.name}', style=f'bold {sev_color}')
+                if d.step:
+                    ann.append(f' [{d.step}]')
+                ann.append(f': {d.msg}',
+                           style=sev_color)
+                console.print(ann)
+            console.print(sep_prefix, style='dim')
+    _render_summary(checker, console)
+
+
 def main() -> None:
     args = parse_args(sys.argv[1:])
     version = args.version
 
     if ':' in args.infile:
-        version, desc = secop_check.load_from_node(args.infile)
+        version, desc = load_from_node(args.infile)
     elif args.infile == '-':
         desc = sys.stdin.read()
     else:
         with open(args.infile, encoding='utf-8') as f:  # noqa: PTH123
             desc = f.read()
 
+    if args.annotate:
+        output = 'none'  # we'll print separately afterwards
+    elif args.json:
+        output = 'json'
+    else:
+        output = 'text'
+
     try:
-        checker = secop_check.checker.Checker(version, args.schema,
-                                              'json' if args.json else 'text')
+        checker = Checker(version, args.schema, output)
         checker.check(desc)
-    except secop_check.Catastrophe:
+        if args.annotate:
+            _render_annotated(checker, desc)
+        elif output == 'text':
+            _render_summary(checker, Console())
+    except Catastrophe:
         sys.exit(1)

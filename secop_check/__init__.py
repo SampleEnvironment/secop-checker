@@ -53,12 +53,25 @@ class Severity(Enum):
     # something that makes the checking stop directly
     CATASTROPHIC = 3
 
+    def __gt__(self, other: Severity) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, other: Severity) -> bool:
+        return self.value >= other.value
+
 
 _SEVERITY_BORDER = {
     Severity.HINT: 'dim',
     Severity.WARNING: 'yellow',
     Severity.ERROR: 'red',
     Severity.CATASTROPHIC: 'bold red',
+}
+
+_SEVERITY_COLORS = {
+    Severity.HINT: 'color(44)',
+    Severity.WARNING: 'color(142)',
+    Severity.ERROR: 'color(196)',
+    Severity.CATASTROPHIC: 'bold color(88)',
 }
 
 

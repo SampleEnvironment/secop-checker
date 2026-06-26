@@ -2,3 +2,9 @@ implement systems
 test with custom interface classes
 properly present context
 check context in test methds.
+
+- from-import style "."
+- errors on open / unhandled -> format better
+- "100" in enum value not caught
+
+- defs problem: * "escription" => TB, * "arameters" => nothing

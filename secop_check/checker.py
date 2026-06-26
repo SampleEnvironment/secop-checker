@@ -157,7 +157,7 @@ class Checker(DiagnosticBase):
             if dprop not in actual_dprops:
                 if not dpropdesc.optional:
                     self.emit(Severity.ERROR,
-                              'missing required property for datainfo '
+                              'missing required property for datainfo type '
                               f'{descty}: {dprop!r}')
             else:
                 with self.with_context(ctx.Datainfo(descty, dprop)):
@@ -166,8 +166,8 @@ class Checker(DiagnosticBase):
 
         if actual_dprops:
             self.emit(Severity.WARNING,
-                      'unknown properties given for datainfo '
-                      f'{descty}: {actual_dprops}')
+                      'unknown properties given for datainfo type '
+                      f"{descty}: {', '.join(map(repr, actual_dprops))}")
 
     def visit_descriptive_data(self, desc: desc_dict) -> None:
         for visitorcls in VISITORS:

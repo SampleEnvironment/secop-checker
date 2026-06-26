@@ -300,9 +300,9 @@ class TestDatainfoStructure:
         d = deepcopy(READABLE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {'type': 'int'}
         assert_has(check(d),
-                   (ERROR, "missing required property for datainfo int: 'min'",
+                   (ERROR, "missing required property for datainfo type int: 'min'",
                     'Module m:Parameter value:Property datainfo'),
-                   (ERROR, "missing required property for datainfo int: 'max'",
+                   (ERROR, "missing required property for datainfo type int: 'max'",
                     'Module m:Parameter value:Property datainfo'))
 
     def test_unknown_dataprop(self):
@@ -311,7 +311,7 @@ class TestDatainfoStructure:
             'type': 'double', 'unit': 'K', 'garbage': 1}
         assert_has(check(d),
                    (WARNING,
-                    "unknown properties given for datainfo double: {'garbage'}",
+                    "unknown properties given for datainfo type double: 'garbage'",
                     'Module m:Parameter value:Property datainfo'))
 
 
@@ -321,7 +321,7 @@ class TestDatainfoTemplate:
         d = deepcopy(READABLE)
         d['modules']['m']['accessibles']['status']['datainfo'] = {'type': 'tuple'}
         assert_has(check(d),
-                   (ERROR, "missing required property for datainfo tuple: 'members'",
+                   (ERROR, "missing required property for datainfo type tuple: 'members'",
                     'Module m:Parameter status:Property datainfo'),
                    (ERROR, "missing required datainfo key 'members'",
                     'Module m:Parameter status'))

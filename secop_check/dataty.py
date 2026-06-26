@@ -239,6 +239,9 @@ class OneOf(Dataty):
         return isinstance(value, str) and value in self.values
 
     def describe(self) -> str:
+        if len(self.values) > 5:  # noqa: PLR2004
+            return 'one of: ' + ', '.join(self.values[:5]) + \
+                f' (and {len(self.values) - 5} more)'
         return 'one of: ' + ', '.join(self.values)
 
 
