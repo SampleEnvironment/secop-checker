@@ -565,6 +565,24 @@ class TestPostfixedParams:
                    (ERROR, "expected datainfo type 'parent', got 'double'",
                     'Module m:Parameter value_min'))
 
+    def test_wrong_datatype(self):
+        d = deepcopy(MIN)
+        d['modules']['m']['accessibles'] = {
+            'value': {
+                'description': 'value',
+                'datainfo': {'type': 'double', 'unit': 'K'},
+                'readonly': True,
+            },
+            'value_min': {
+                'description': 'vmin',
+                'datainfo': {'type': 'int', 'unit': 'K', 'min': 0, 'max': 1},
+                'readonly': False,
+            },
+        }
+        assert_has(check(d, version='2.0'),
+                   (ERROR, "expected datainfo type 'double', got 'int'",
+                    'Module m:Parameter value_min'))
+
     def test_valid_postfixed_param(self):
         d = deepcopy(MIN)
         d['modules']['m']['accessibles'] = {
