@@ -3,6 +3,4 @@ test with custom interface classes
 
 - errors on open / unhandled -> format better
 
-- defs problem: * "escription" => TB, * "arameters" => nothing
-
 - mode for hinting at possible other properties?

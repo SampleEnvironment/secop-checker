@@ -232,11 +232,19 @@ class Loader(DiagnosticBase):
 
         with self.with_context(File(uri)):
             for spec in data:
-                # check for required fields for all objects
+                if not isinstance(spec, dict):
+                    self.emit(Severity.ERROR,
+                              'expected a YAML mapping, got '
+                              f'{type(spec).__name__}')
+                    continue
+                ok = True
                 for req in COMMON_META:
                     if req not in spec:
                         self.emit(Severity.ERROR, 'found yaml item without '
                                   f'required {req}: {spec!r}')
+                        ok = False
+                if not ok:
+                    continue
                 spec['description'] = spec['description'].strip()
                 raw_objects.setdefault(
                     spec['kind'], {}).setdefault(
@@ -256,7 +264,7 @@ class Loader(DiagnosticBase):
                                          f'schema repository in {uri}')
         repo = next(iter(repos.values()))
 
-        for filename in repo['files']:
+        for filename in repo.get('files', []):
             if '://' in uri:
                 parsed = urlparse(uri)
                 new_path = Path(parsed.path) / filename
@@ -274,10 +282,12 @@ class Loader(DiagnosticBase):
         if not ver_root.is_file():
             raise self.emit_catastrophic(
                 f'no root yaml found for version {version}')
-        self.load_repo(str(ver_root))
+        with self.with_context(Generic('Loading', f'version-{version}.yaml')):
+            self.load_repo(str(ver_root))
 
         for add in additional:
-            self.load_repo(add)
+            with self.with_context(Generic('Loading', add)):
+                self.load_repo(add)
 
     def get_inv(self) -> Inventory:
         return self._inv
@@ -306,12 +316,19 @@ class Converter:
         kind_name = kind.__name__
         if isinstance(reference, dict):
             reference = cast('desc_dict', reference)
+            if not reference:
+                raise self.loader.emit_catastrophic(
+                    f'empty {kind_name} reference')
             name, props = reference.popitem()
             if reference:
                 reference[name] = props
                 raise self.loader.emit_catastrophic(
                     f'invalid reference {reference}, needs to be '
                     'a 1-element dictionary')
+            if not isinstance(props, dict):
+                raise self.loader.emit_catastrophic(
+                    f'invalid {kind_name} inline definition for {name!r}: '
+                    f'expected a mapping, got {type(props).__name__}')
             if 'definition' not in props:
                 if 'description' not in props:
                     self.loader.emit(Severity.ERROR, 'spec item must have a '
@@ -559,18 +576,23 @@ class Converter:
 
     def _mk_datainfo(self, data: desc_dict) -> Datainfo:
         dprops = self._get(data, 'dataprops', dict)
+        dataprops: dict[str, Dataprop] = {}
+        for name, x in dprops.items():
+            if not isinstance(x, dict):
+                self.loader.emit(Severity.ERROR,
+                                 f'invalid dataprop {name!r}: expected a '
+                                 f'mapping, got {type(x).__name__}')
+                continue
+            dataprops[name] = Dataprop(
+                dataty=self._get_dataty(x, 'dataty'),
+                optional=self._get(x, 'optional', bool, default=False),
+                default=self._get(x, 'default', object, default=None),
+            )
         return Datainfo(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             dataty=self._get_dataty(data, 'dataty'),
-            dataprops={
-                name: Dataprop(
-                    dataty=self._get_dataty(x, 'dataty'),
-                    optional=self._get(x, 'optional', bool, default=False),
-                    default=self._get(x, 'default', object, default=None),
-                )
-                for (name, x) in dprops.items()
-            },
+            dataprops=dataprops,
         )

@@ -1,3 +1,26 @@
+# *****************************************************************************
+# Copyright (c) 2024-2025 by the authors, see LICENSE
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# Module authors:
+#   Alexander Zaft <a.zaft@fz-juelich.de>
+#   Georg Brandl <g.brandl@fz-juelich.de>
+#
+# *****************************************************************************
+
 # ruff: noqa: ANN001, ANN201  -- pytest fixtures/methods; no type annotations needed
 
 """Tests for catastrophic errors during schema loading.
@@ -15,9 +38,7 @@ import pytest
 from secop_check import Catastrophe
 from secop_check.checker import Checker
 
-# ---------------------------------------------------------------------------
 # helpers
-# ---------------------------------------------------------------------------
 
 def _checker_with_yaml(yaml: str, tmp_path, *,
                        name: str = 'repo.yaml') -> Checker:
@@ -50,11 +71,6 @@ properties:
   Command: []
 datainfo: []
 """
-
-
-# ---------------------------------------------------------------------------
-# Loader-level catastrophes
-# ---------------------------------------------------------------------------
 
 
 class TestLoaderCatastrophes:
@@ -99,10 +115,45 @@ class TestLoaderCatastrophes:
         with pytest.raises(Catastrophe):
             Checker('99.9', [], output='text')
 
+    # -- _load_one edge cases ------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Converter-level catastrophes — Repository fields
-# ---------------------------------------------------------------------------
+    def test_non_dict_yaml_doc(self, tmp_path):
+        """Non-dict YAML doc emits ERROR instead of crashing."""
+        p = tmp_path / 'bad.yaml'
+        p.write_text('null\n')
+        with pytest.raises(Catastrophe):
+            Checker('2.0', [str(p)], output='text')
+
+    def test_yaml_item_missing_required_meta(self, tmp_path):
+        """Missing description/name/version emits ERROR, not KeyError."""
+        p = tmp_path / 'bad.yaml'
+        p.write_text("""\
+kind: Repository
+name: test
+version: 1
+description: test
+files: []
+systems: []
+interfaces: []
+features: []
+parameters: []
+postfixes: []
+commands: []
+properties:
+  SECNode: []
+  System: []
+  Module: []
+  Parameter: []
+  Command: []
+datainfo: []
+---
+kind: Datainfo
+name: broken
+version: 1
+""")
+        c = Checker('2.0', [str(p)], output='text')
+        with pytest.raises(Catastrophe):
+            c.check('{}')
 
 
 class TestConverterRepositoryCatastrophes:
@@ -117,11 +168,6 @@ class TestConverterRepositoryCatastrophes:
         yaml = BASE_REPO.replace('datainfo: []\n', '')
         with pytest.raises(Catastrophe):
             _checker_with_yaml(yaml, tmp_path)
-
-
-# ---------------------------------------------------------------------------
-# Converter-level catastrophes — resolution errors
-# ---------------------------------------------------------------------------
 
 
 class TestConverterResolveCatastrophes:
@@ -202,10 +248,39 @@ commands: []
         with pytest.raises(Catastrophe):
             _checker_with_yaml(yaml, tmp_path)
 
+    # -- _resolve dict-path edge cases ---------------------------------------
 
-# ---------------------------------------------------------------------------
-# Converter-level catastrophes — datainfo & dataty via sub-files
-# ---------------------------------------------------------------------------
+    def test_empty_dict_reference(self, tmp_path):
+        yaml = BASE_REPO.replace('datainfo: []\n',
+                                 'datainfo:\n  - {}\n')
+        with pytest.raises(Catastrophe):
+            _checker_with_yaml(yaml, tmp_path)
+
+    def test_inline_ref_props_not_a_dict(self, tmp_path):
+        """Non-dict inline ref props give Catastrophe, not TypeError."""
+        yaml = """\
+kind: Repository
+name: test
+version: 1
+description: test
+files: []
+systems: []
+interfaces: []
+features: []
+postfixes: []
+properties:
+  SECNode: []
+  System: []
+  Module: []
+  Parameter: []
+  Command: []
+datainfo: []
+parameters:
+  - myparam: 42
+commands: []
+"""
+        with pytest.raises(Catastrophe):
+            _checker_with_yaml(yaml, tmp_path)
 
 
 class TestConverterDatainfoCatastrophes:
@@ -339,10 +414,52 @@ description: test
         with pytest.raises(Catastrophe):
             Checker('2.0', [self._prop_repo(prop, tmp_path)], output='text')
 
+    # -- datainfo dataprop errors --------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Checker-level catastrophes
-# ---------------------------------------------------------------------------
+    def _datainfo_repo(self, di_yaml: str, tmp_path) -> str:
+        """Write a repo+sub-file that references a Datainfo and return path."""
+        repo = """\
+kind: Repository
+name: test
+version: 1
+description: test
+files:
+  - sub.yaml
+systems: []
+interfaces: []
+features: []
+postfixes: []
+parameters: []
+commands: []
+properties:
+  SECNode: []
+  System: []
+  Module: []
+  Parameter: []
+  Command: []
+datainfo:
+  - bad:1
+"""
+        rp = tmp_path / 'repo.yaml'
+        rp.write_text(repo)
+        sp = tmp_path / 'sub.yaml'
+        sp.write_text(di_yaml)
+        return str(rp)
+
+    def test_dataprop_not_a_dict(self, tmp_path):
+        """Non-dict dataprop value emits ERROR, not AttributeError."""
+        di = """\
+kind: Datainfo
+name: bad
+version: 1
+description: test
+dataty: string
+dataprops:
+  members: not_a_dict
+"""
+        c = Checker('2.0', [self._datainfo_repo(di, tmp_path)], output='text')
+        with pytest.raises(Catastrophe):
+            c.check('{}')
 
 
 class TestCheckerCatastrophes:
