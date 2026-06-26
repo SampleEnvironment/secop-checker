@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 
     from .context import ContextItem
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+
 
 # int-enum?
 class Severity(Enum):
@@ -48,6 +52,14 @@ class Severity(Enum):
     ERROR = 2
     # something that makes the checking stop directly
     CATASTROPHIC = 3
+
+
+_SEVERITY_BORDER = {
+    Severity.HINT: 'dim',
+    Severity.WARNING: 'yellow',
+    Severity.ERROR: 'red',
+    Severity.CATASTROPHIC: 'bold red',
+}
 
 
 @dataclass
@@ -75,6 +87,7 @@ class DiagnosticBase:
         self._step = ''
         self._context = Context(path=[])
         self._out = sys.stdout
+        self._richconsole = Console(file=self._out)
 
     def get_diags(self) -> list[Diagnostic]:
         return self._diags
@@ -110,11 +123,21 @@ class DiagnosticBase:
             }))
             self._out.write('\n')
         elif self._output == 'text':
-            step = f' [{diag.step}]' if diag.step else ''
+            step = diag.step
             ctx = ' / '.join(str(item) for item in diag.ctx.path).strip()
+            content = Text()
+            if step:
+                content.append(f'[{step}] ', style='bold')
             if ctx:
-                ctx += ': '
-            self._out.write(f'{diag.severity.name}{step}: {ctx}{diag.msg}\n')
+                content.append(ctx)
+                content.append('\n\n')
+            content.append(diag.msg)
+            self._richconsole.print(Panel(
+                content,
+                title=f' {diag.severity.name} ',
+                border_style=_SEVERITY_BORDER[diag.severity],
+                padding=(0, 1),
+            ))
 
 
 def load_from_node(addr: str) -> tuple[str, str]:
