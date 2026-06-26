@@ -25,6 +25,7 @@ import argparse
 import json
 import re
 import sys
+import traceback
 
 from rich.console import Console
 from rich.highlighter import JSONHighlighter
@@ -32,7 +33,15 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
 
-from . import _SEVERITY_COLORS, Catastrophe, Severity, load_from_node
+from . import (
+    _SEVERITY_COLORS,
+    Catastrophe,
+    Context,
+    Diagnostic,
+    DiagnosticBase,
+    Severity,
+    load_from_node,
+)
 from . import context as ctx
 from .checker import Checker
 
@@ -178,14 +187,6 @@ def main() -> None:
     args = parse_args(sys.argv[1:])
     version = args.version
 
-    if ':' in args.infile:
-        version, desc = load_from_node(args.infile)
-    elif args.infile == '-':
-        desc = sys.stdin.read()
-    else:
-        with open(args.infile, encoding='utf-8') as f:  # noqa: PTH123
-            desc = f.read()
-
     if args.annotate:
         output = 'none'  # we'll print separately afterwards
     elif args.json:
@@ -194,6 +195,14 @@ def main() -> None:
         output = 'text'
 
     try:
+        if ':' in args.infile:
+            version, desc = load_from_node(args.infile)
+        elif args.infile == '-':
+            desc = sys.stdin.read()
+        else:
+            with open(args.infile, encoding='utf-8') as f:  # noqa: PTH123
+                desc = f.read()
+
         checker = Checker(version, args.schema, output)
         checker.check(desc)
         if args.annotate:
@@ -202,3 +211,10 @@ def main() -> None:
             _render_summary(checker, Console())
     except Catastrophe:
         sys.exit(1)
+    except Exception as e:  # noqa: BLE001
+        diag = Diagnostic(
+            Severity.CATASTROPHIC, '',
+            Context(path=[], traceback=traceback.format_exc()),
+            f'The checker encountered an error: {e}',
+        )
+        DiagnosticBase(output)._print(diag)  # noqa: SLF001

@@ -1,6 +1,3 @@
-implement systems
-test with custom interface classes
-
-- errors on open / unhandled -> format better
-
+- implement systems
+- test with custom interface classes
 - mode for hinting at possible other properties?

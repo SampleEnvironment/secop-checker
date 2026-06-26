@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import socket
 import sys
+import traceback
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -78,6 +79,7 @@ _SEVERITY_COLORS = {
 @dataclass
 class Context:
     path: list[ContextItem]
+    traceback: str = ''
     # system?
 
 
@@ -87,6 +89,7 @@ class Diagnostic:
     step: str
     ctx: Context
     msg: str
+    traceback: str = ''
 
 
 class Catastrophe(Exception):  # noqa: N818
@@ -120,8 +123,9 @@ class DiagnosticBase:
         self._print(diag)
 
     def emit_catastrophic(self, msg: str) -> type[Exception]:
-        diag = Diagnostic(Severity.CATASTROPHIC, self._step,
-                          deepcopy(self._context), msg)
+        ctx = deepcopy(self._context)
+        ctx.traceback = ''.join(traceback.format_stack()[:-1]).rstrip()
+        diag = Diagnostic(Severity.CATASTROPHIC, self._step, ctx, msg)
         self._diags.append(diag)
         self._print(diag)
         return Catastrophe
@@ -145,6 +149,9 @@ class DiagnosticBase:
                 content.append(ctx)
                 content.append('\n\n')
             content.append(diag.msg)
+            if diag.ctx.traceback:
+                content.append('\n\n')
+                content.append(diag.ctx.traceback, style='color(244)')
             self._richconsole.print(Panel(
                 content,
                 title=f' {diag.severity.name} ',
