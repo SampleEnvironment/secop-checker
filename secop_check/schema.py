@@ -130,7 +130,7 @@ class Feature(Entity):
 
 @dataclass
 class System(Entity):
-    base: System | None
+    bases: list[System]
     modules: dict[str, Interface]
     systems: dict[str, System]
 
@@ -479,7 +479,8 @@ class Converter:
         )
 
     def _mk_system(self, data: desc_dict) -> System:
-        base = self._get(data, 'base', object, None)
+        bases = [self._resolve(System, x)
+                 for x in self._get(data, 'bases', list, [])]
         modules = {name: self._resolve(Interface,
                                        x if isinstance(x, str) else {name: x})
                    for (name, x) in self._get(data, 'modules', dict).items()}
@@ -490,7 +491,7 @@ class Converter:
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
-            base=self._resolve(System, base) if base else None,
+            bases=bases,
             modules=modules,
             systems=systems,
         )
