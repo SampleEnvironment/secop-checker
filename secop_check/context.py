@@ -85,6 +85,10 @@ class File(ContextItem):
     pass
 
 
+class System(ContextItem):
+    pass
+
+
 class Generic(ContextItem):
     def __init__(self, kind: str, name: str) -> None:
         super().__init__(name)

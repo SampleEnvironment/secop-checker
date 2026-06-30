@@ -331,8 +331,9 @@ class Converter:
                     f'expected a mapping, got {type(props).__name__}')
             if 'definition' not in props:
                 if 'description' not in props:
-                    self.loader.emit(Severity.ERROR, 'spec item must have a '
-                                     'description')
+                    if 'parameters' not in props and 'commands' not in props:
+                        self.loader.emit(Severity.ERROR,
+                                         'spec item must have a description')
                     props['description'] = ''
                 props['kind'] = kind_name
                 props['version'] = 0
@@ -387,7 +388,8 @@ class Converter:
         """Ensure that a datainfo with the given name is registered."""
         if name in ('any', 'none', 'parent', 'number'):
             return
-        if name not in self.raw.get('Datainfo', {}):
+        if (name not in self.raw.get('Datainfo', {})
+                and self.inv.get(Datainfo, name, 1) is None):
             raise self.loader.emit_catastrophic(
                 f'no datainfo type with name {name!r} exists')
 

@@ -147,6 +147,11 @@ class Checker(DiagnosticBase):
                 for val in actual_dict.values():
                     self.check_datainfo(cast('dict', val))
             elif dataty.fieldtypes:
+                unknown = set(actual_dict) - set(dataty.fieldtypes)
+                if unknown:
+                    self.emit(Severity.WARNING,
+                              f'unknown struct keys: '
+                              f'{", ".join(sorted(unknown))}')
                 for key, fieldtype in dataty.fieldtypes.items():
                     if isinstance(fieldtype, DatatyDatainfo) \
                             and key in actual_dict:
@@ -210,6 +215,10 @@ class Checker(DiagnosticBase):
                     for module, moddesc in propdesc.items():
                         with self.with_context(ctx.Module(module)):
                             self._visit_module(module, moddesc, visitor)
+
+                elif prop == 'systems':
+                    # handled by SystemChecker in visit_secnode
+                    pass
 
                 # other node properties
                 else:

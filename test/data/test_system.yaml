@@ -1,0 +1,35 @@
+---
+kind: Repository
+name: "TestSystem"
+version: 1
+description: "Test fixture for system checking"
+files: []
+systems:
+  - TestSystem:1
+interfaces: []
+features: []
+parameters: []
+postfixes: []
+commands: []
+properties:
+  SECNode: []
+  System: []
+  Module: []
+  Parameter: []
+  Command: []
+datainfo: []
+
+---
+kind: System
+name: TestSystem
+version: 1
+description: |
+  A simple test system with one required and one optional module.
+modules:
+  main:
+    definition: Readable:1
+    description: The main module that must be present.
+  extra:
+    definition: Readable:1
+    description: An extra module that is optional.
+    optional: true

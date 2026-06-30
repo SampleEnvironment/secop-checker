@@ -28,7 +28,9 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from . import Severity
 from .context import ConstantValue
+from .context import Module as CtxModule
 from .context import Property as CtxProperty
+from .context import System as CtxSystem
 from .dataty import Dataty
 from .schema import (
     Command,
@@ -38,6 +40,7 @@ from .schema import (
     Parameter,
     ParameterPostfix,
     SECNode,
+    System,
 )
 
 if TYPE_CHECKING:
@@ -199,15 +202,369 @@ class InterfaceChecker(BaseVisitor):
             add_baseclass(Feature, feat)
 
 
+class SystemChecker(BaseVisitor):
+    """Checks that systems are properly defined.
+
+    Validates system entries in the SECNode description: resolves the
+    system schema reference, checks that all required modules are mapped,
+    that mapped modules exist on the node, and that system names don't
+    clash with module names.  Also validates that mapped modules conform
+    to the interface class, parameter/command, and property requirements
+    specified in the system definition.
+    """
+
+    name = 'system'
+
+    def visit_secnode(self, description: desc_dict) -> None:
+        systems = description.get('systems', {})
+        if not isinstance(systems, dict):
+            self.checker.emit(Severity.ERROR,
+                              "'systems' must be a dict")
+            return
+
+        module_names = set(description.get('modules', {}))
+        modules_desc = description.get('modules', {})
+        sys_props = {prop.name: (prop, None)
+                     for prop in self.inv.get_global_props(System)}
+
+        for sysname, sysdesc in systems.items():
+            with self.checker.with_context(CtxSystem(sysname)):
+                self._check_one(sysname, sysdesc, module_names,
+                                modules_desc, sys_props)
+
+    def _check_one(self, sysname: str, sysdesc: object,
+                   module_names: set[str],
+                   modules_desc: dict[str, dict],
+                   sys_props: dict[str, tuple]) -> None:
+        if not isinstance(sysdesc, dict):
+            self.checker.emit(Severity.ERROR,
+                              'systems entry must be a dict')
+            return
+
+        desc = cast('desc_dict', sysdesc)
+
+        # system name must not clash with module names
+        if sysname in module_names:
+            self.checker.emit(Severity.ERROR,
+                              'system name clashes with existing module')
+
+        # system property (reference) is required
+        system_ref = desc.get('system')
+        if not isinstance(system_ref, str):
+            self.checker.emit(Severity.ERROR,
+                              "missing required key 'system'")
+            return
+
+        # parse and resolve the system reference
+        if ':' in system_ref:
+            sys_name, ver_str = system_ref.rsplit(':', 1)
+            try:
+                sys_version = int(ver_str)
+            except ValueError:
+                self.checker.emit(Severity.ERROR,
+                                  f'invalid version in system reference '
+                                  f'{system_ref!r}')
+                return
+        else:
+            sys_name = system_ref
+            sys_version = None
+
+        system_obj = self.inv.get(System, sys_name, sys_version)
+        if system_obj is None:
+            self.checker.emit(Severity.ERROR,
+                              f'references unknown system {system_ref!r}')
+            return
+
+        # collect all module requirements from system and its bases
+        required_modules: dict[str, Interface] = {}
+
+        def _collect(sys_obj: System) -> None:
+            for base in sys_obj.bases:
+                _collect(base)
+            for modname, iface in sys_obj.modules.items():
+                if modname in required_modules:
+                    existing = required_modules[modname]
+                    iface.name = existing.name
+                    iface.base = existing.base
+                    if not iface.parameters:
+                        iface.parameters = existing.parameters
+                    if not iface.commands:
+                        iface.commands = existing.commands
+                    if not iface.properties:
+                        iface.properties = existing.properties
+                required_modules[modname] = iface
+
+        _collect(system_obj)
+
+        # check the modules mapping
+        modules_map = desc.get('modules', {})
+        if not isinstance(modules_map, dict):
+            self.checker.emit(Severity.ERROR,
+                              "'modules' must be a dict")
+            return
+
+        self._check_module_mappings(
+            required_modules, modules_map, module_names, system_ref)
+
+        # check module specifications against actual modules
+        for modname, iface in required_modules.items():
+            if modname not in modules_map:
+                continue
+            actual_modname = modules_map[modname]
+            if not isinstance(actual_modname, str) or \
+               actual_modname not in module_names:
+                continue
+            with self.checker.with_context(CtxModule(modname)):
+                self._check_module_spec(iface, actual_modname, modules_desc)
+
+        # check system-level properties (description, system ref, etc.)
+        self._check_system_props(desc, sys_props)
+
+    def _check_module_mappings(self, required_modules: dict,
+                                modules_map: dict, module_names: set[str],
+                                system_ref: str) -> None:
+        for modname, iface in required_modules.items():
+            optional = getattr(iface, 'optional', False) if \
+                hasattr(iface, 'optional') else False
+            if optional:
+                if modname in modules_map:
+                    actual_mod = modules_map[modname]
+                    if not isinstance(actual_mod, str) or \
+                       actual_mod not in module_names:
+                        self.checker.emit(
+                            Severity.ERROR,
+                            f'optional module {modname!r} maps to '
+                            f'non-existent module {actual_mod!r}',
+                        )
+            elif modname not in modules_map:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'missing required module {modname!r} '
+                    "in 'modules' mapping",
+                )
+            else:
+                actual_mod = modules_map[modname]
+                if not isinstance(actual_mod, str) or \
+                   actual_mod not in module_names:
+                    self.checker.emit(
+                        Severity.ERROR,
+                        f'module {modname!r} maps to '
+                        f'non-existent module {actual_mod!r}',
+                    )
+
+        for modname in modules_map:
+            if modname not in required_modules:
+                self.checker.emit(
+                    Severity.WARNING,
+                    f'module {modname!r} is not defined in system '
+                    f'{system_ref!r}',
+                )
+
+    def _has_raw_specs(self, items: list) -> bool:
+        return bool(items) and isinstance(items[0], dict)
+
+    def _check_module_spec(self, spec: Interface, actual_modname: str,
+                           modules_desc: dict[str, dict]) -> None:
+        actual = modules_desc.get(actual_modname)
+        if actual is None:
+            return
+
+        # 1. interface class check
+        self._check_interface_class(spec, actual)
+
+        accessibles = actual.get('accessibles', {})
+
+        # 2. parameter specs
+        if self._has_raw_specs(spec.parameters):
+            for pspec in cast('list[dict[str, dict]]', spec.parameters):
+                for pname, pprops in pspec.items():
+                    self._check_param_spec(pname, pprops, accessibles)
+
+        # 3. command specs
+        if self._has_raw_specs(spec.commands):
+            for cspec in cast('list[dict[str, dict]]', spec.commands):
+                for cname, cprops in cspec.items():
+                    self._check_cmd_spec(cname, cprops, accessibles)
+
+        # 4. module-level property specs
+        if self._has_raw_specs(spec.properties):
+            for mpspec in cast('list[dict[str, dict]]', spec.properties):
+                for pname, pprops in mpspec.items():
+                    self._check_mod_prop_spec(pname, pprops, actual)
+
+    def _check_interface_class(self, spec: Interface, actual: dict) -> None:
+        required = spec.name
+        actual_ifaces = actual.get('interface_classes', [])
+
+        if required in actual_ifaces:
+            return
+
+        for iface_name in actual_ifaces:
+            iface = self.inv.get(Interface, iface_name)
+            if iface is not None and self._inherits(iface, required):
+                return
+
+        self.checker.emit(
+            Severity.ERROR,
+            f'requires interface {required!r}, '
+            f'module declares {actual_ifaces}',
+        )
+
+    def _inherits(self, iface: Interface, target: str) -> bool:
+        current: Interface | None = iface
+        while current is not None:
+            if current.name == target:
+                return True
+            current = current.base
+        return False
+
+    def _check_param_spec(self, pname: str, pprops: dict,
+                          accessibles: dict) -> None:
+        optional = pprops.get('optional', False)
+
+        if pname not in accessibles:
+            if not optional:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'missing required parameter {pname!r}',
+                )
+            return
+
+        actual = accessibles[pname]
+
+        if 'datainfo' in pprops:
+            expected_di = pprops['datainfo']
+            actual_di = actual.get('datainfo', {})
+            self._check_datainfo(pname, expected_di, actual_di)
+
+        if 'readonly' in pprops:
+            expected = pprops['readonly']
+            actual_val = actual.get('readonly', False)
+            if actual_val is not expected:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'parameter {pname!r} has readonly={actual_val}, '
+                    f'expected {expected}',
+                )
+
+        # check parameter-level properties (visibility, etc.)
+        for prop_spec in pprops.get('properties', []):
+            if isinstance(prop_spec, dict):
+                for prop_name, prop_props in prop_spec.items():
+                    forced_val = prop_props.get('value')
+                    if forced_val is not None:
+                        actual_val = actual.get(prop_name)
+                        if actual_val != forced_val:
+                            self.checker.emit(
+                                Severity.ERROR,
+                                f'parameter property {prop_name!r} on '
+                                f'{pname!r} has {actual_val!r}, '
+                                f'expected {forced_val!r}',
+                            )
+
+    def _check_datainfo(self, pname: str, expected: dict,
+                        actual: dict) -> None:
+        etype = expected.get('type')
+        atype = actual.get('type')
+        if etype and atype and etype != atype \
+                and not (etype == 'string' and atype == 'enum'):
+            self.checker.emit(
+                    Severity.ERROR,
+                    f'parameter {pname!r} has datainfo type {atype!r}, '
+                    f'expected {etype!r}',
+                )
+        for key, evalue in expected.items():
+            if key in {'type', 'description'}:
+                continue
+            if key not in actual:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'parameter {pname!r} missing datainfo property '
+                    f'{key!r} (expected {evalue!r})',
+                )
+            elif actual[key] != evalue:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'parameter {pname!r} datainfo.{key} is '
+                    f'{actual[key]!r}, expected {evalue!r}',
+                )
+
+    def _check_cmd_spec(self, cname: str, cprops: dict,
+                        accessibles: dict) -> None:
+        optional = cprops.get('optional', False)
+
+        if cname not in accessibles and not optional:
+            self.checker.emit(
+                Severity.ERROR,
+                f'missing required command {cname!r}',
+            )
+
+    def _check_mod_prop_spec(self, pname: str, pprops: dict,
+                             actual: dict) -> None:
+        forced_val = pprops.get('value')
+        if forced_val is not None:
+            actual_val = actual.get(pname)
+            if isinstance(forced_val, dict) and isinstance(actual_val, dict):
+                mismatches = {k: (actual_val.get(k), v)
+                              for k, v in forced_val.items()
+                              if actual_val.get(k) != v}
+                if mismatches:
+                    self.checker.emit(
+                        Severity.ERROR,
+                        f'module property {pname!r} mismatches: '
+                        f'{mismatches}',
+                    )
+            elif actual_val != forced_val:
+                self.checker.emit(
+                    Severity.ERROR,
+                    f'module property {pname!r} has {actual_val!r}, '
+                    f'expected {forced_val!r}',
+                )
+
+    def _check_system_props(self, sysdesc: dict,
+                            sys_props: dict[str, tuple]) -> None:
+        required = {prop for prop, (propspec, _) in sys_props.items()
+                    if not propspec.optional}
+        for member, mvalue in sysdesc.items():
+            if member == 'modules':
+                continue
+            required.discard(member)
+            with self.checker.with_context(CtxProperty(member)):
+                if member not in sys_props:
+                    if not member.startswith('_'):
+                        self.checker.emit(
+                            Severity.WARNING,
+                            "non-standard properties need '_' "
+                            'as a prefix',
+                        )
+                else:
+                    self.checker.check_dataty(
+                        sys_props[member][0].dataty, mvalue)
+                    fv = sys_props[member][0].forced_value
+                    if fv is not None and mvalue != fv:
+                        self.checker.emit(
+                            Severity.ERROR,
+                            f'property has forced value '
+                            f'{fv!r}, got {mvalue!r}',
+                        )
+        if required:
+            self.checker.emit(
+                Severity.ERROR,
+                "missing required properties: "
+                f"{', '.join(map(repr, sorted(required)))}",
+            )
+
+
 class BasePropsChecker(BaseVisitor):
     name = 'properties-basic'
 
     def check_props(self, description: desc_dict, props: dict,
-                    skip: str | None = None) -> None:
+                    skip: str | tuple[str, ...] | None = None) -> None:
         required = {prop for prop, (propspec, _) in props.items()
                     if not propspec.optional}
+        skip_set = {skip} if isinstance(skip, str) else set(skip or ())
         for member, mvalue in description.items():
-            if member == skip:
+            if member in skip_set:
                 continue
             required.discard(member)
             with self.checker.with_context(CtxProperty(member)):
@@ -236,7 +593,7 @@ class BasePropsChecker(BaseVisitor):
         self.check_props(description,
                          {par.name: (par, None) for par in
                           self.inv.get_global_props(SECNode)},
-                         'modules')
+                         ('modules', 'systems'))
 
     def visit_module(self, name: str, description: desc_dict) -> None:
         self.check_props(description,
@@ -319,7 +676,8 @@ class AccessibleChecker(BaseVisitor):
             # handle special cases
             if kval == 'any' or \
                (kval == 'number' and aval in ('double', 'scaled', 'int')) or \
-               (kval == 'double' and aval == 'scaled'):
+               (kval == 'double' and aval == 'scaled') or \
+               (kval == 'string' and aval == 'enum'):
                 aval = kval
 
             if kval != aval:
@@ -457,6 +815,7 @@ VISITORS = [
     BasicStructureChecker,
     NameChecker,
     InterfaceChecker,
+    SystemChecker,
     BasePropsChecker,
     AccessibleChecker,
 ]

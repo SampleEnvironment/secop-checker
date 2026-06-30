@@ -32,7 +32,7 @@ import pytest
 
 from secop_check import Catastrophe, Severity
 from secop_check import Diagnostic as Diag
-from secop_check.checker import Checker
+from secop_check.checker import Checker, desc_dict
 from secop_check.context import SECNode as CtxSECNode
 
 ERROR = Severity.ERROR
@@ -58,7 +58,7 @@ NODE_PROPS = {
     'description': 'x',
 }
 
-MIN: dict[str, Any] = {
+MIN_NODE: dict[str, Any] = {
     'modules': {
         'm': {
             'accessibles': {},
@@ -94,26 +94,19 @@ READ_ACS: dict[str, Any] = {
     },
 }
 
-_MOD_BASE = {
+MOD_BASE = {
     'description': 'x', 'features': [], 'implementation': 'x',
 }
 
 COMMUNICATOR: dict[str, Any] = {
     'modules': {'m': {'accessibles': COMM_ACS,
                       'interface_classes': ['Communicator'],
-                      **_MOD_BASE}},
+                      **MOD_BASE}},
     **NODE_PROPS,
 }
 
-READABLE: dict[str, Any] = {
-    'modules': {'m': {'accessibles': READ_ACS,
-                      'interface_classes': ['Readable'],
-                      **_MOD_BASE}},
-    **NODE_PROPS,
-}
-
-DRIVABLE: dict[str, Any] = {
-    'modules': {'m': {'accessibles': {
+DRIVABLE_MOD = {
+    'accessibles': {
         'value': READ_ACS['value'],
         'status': READ_ACS['status'],
         'target': {
@@ -122,9 +115,21 @@ DRIVABLE: dict[str, Any] = {
             'readonly': False,
         },
         'stop': {'description': 'stop', 'datainfo': {'type': 'command'}},
-    }, 'interface_classes': ['Drivable'], **_MOD_BASE}},
-    **NODE_PROPS,
+    },
+    'interface_classes': ['Drivable'],
+    **MOD_BASE,
 }
+
+READABLE_MOD = {
+    'accessibles': READ_ACS,
+    'interface_classes': ['Readable'],
+    **MOD_BASE,
+}
+
+READABLE_NODE: desc_dict = {
+    'modules': {'m': READABLE_MOD}, **NODE_PROPS}
+DRIVABLE_NODE: desc_dict = {
+    'modules': {'m': DRIVABLE_MOD}, **NODE_PROPS}
 
 
 
@@ -164,17 +169,17 @@ class TestCheckEntryPoint:
             c.check('not json')
 
     def test_minimal_valid_no_diags(self):
-        assert len(check(MIN)) == 0
+        assert len(check(MIN_NODE)) == 0
 
 
 class TestBasicStructure:
     def test_missing_modules(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         del d['modules']
         assert_has(check(d), (ERROR, 'missing dict of modules', ''))
 
     def test_missing_accessibles(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         del d['modules']['m']['accessibles']
         assert_has(check(d), (ERROR, 'missing dict of module accessibles',
                               'Module m'))
@@ -182,13 +187,13 @@ class TestBasicStructure:
 
 class TestNames:
     def test_bad_module_name(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['9bad'] = d['modules'].pop('m')
         assert_has(check(d), (ERROR, 'does not match required module name format',
                               'Module 9bad'))
 
     def test_bad_param_name(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles'] = {
             '9bad': {'description': 'x', 'datainfo': {'type': 'double'},
                      'readonly': True},
@@ -200,7 +205,7 @@ class TestNames:
                     'Module m:Parameter 9bad'))
 
     def test_bad_command_name(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles'] = {
             '9bad': {'description': 'x', 'datainfo': {'type': 'command'}},
         }
@@ -211,7 +216,7 @@ class TestNames:
                     'Module m:Command 9bad'))
 
     def test_bad_property_name(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['9bad'] = 'x'
         assert_has(check(d),
                    (ERROR, 'does not match required property name format',
@@ -222,58 +227,65 @@ class TestNames:
 
 class TestInterfaces:
     def test_unknown_interface(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['interface_classes'] = ['NonExistent']
         assert_has(check(d), (ERROR, "declares unknown Interface: 'NonExistent'",
                               'Module m'))
 
     def test_unknown_feature(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['features'] = ['NonExistent']
         assert_has(check(d), (ERROR, "declares unknown Feature: 'NonExistent'",
                               'Module m'))
 
     def test_valid_readable_no_interface_error(self):
-        assert len(check(READABLE)) == 0
+        assert len(check(READABLE_NODE)) == 0
 
 
 class TestBaseProps:
     def test_unknown_node_property(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['zombie'] = 'blah'
         assert_has(check(d),
                    (WARNING, "non-standard properties need '_' as a prefix",
                     'Property zombie'))
 
     def test_missing_required_property(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         del d['equipment_id']
         assert_has(check(d),
                    (ERROR, "missing required properties: 'equipment_id'", ''))
 
     def test_wrong_property_type(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['equipment_id'] = 42
         assert_has(check(d), (ERROR, 'expected string, got 42',
                               'Property equipment_id'))
 
     def test_forced_value_mismatch(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['testprop'] = 'wrong'
         assert_has(check(d, FORCED_VALUE_FIXTURE),
                    (ERROR, "property has forced value 'must_be_this', got 'wrong'",
                     'Module m:Property testprop'))
 
     def test_forced_value_correct(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['testprop'] = 'must_be_this'
         diags = check(d, FORCED_VALUE_FIXTURE)
         assert not diags
 
+    def test_unknown_struct_key(self):
+        d = deepcopy(MIN_NODE)
+        d['modules']['m']['meaning'] = {'function': 'temperature', 'xxx': 'yyy'}
+        assert_has(check(d, version='2.0'),
+                   (WARNING, 'unknown struct keys: xxx',
+                    'Module m:Property meaning'))
+
 
 class TestDatainfoStructure:
     def test_empty_datainfo(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {}
         assert_has(check(d),
                    (ERROR, 'datainfo is empty',
@@ -282,7 +294,7 @@ class TestDatainfoStructure:
                     'Module m:Parameter value'))
 
     def test_datainfo_no_type(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {'unit': 'K'}
         assert_has(check(d),
                    (ERROR, 'datainfo does not have a type',
@@ -291,14 +303,14 @@ class TestDatainfoStructure:
                     'Module m:Parameter value'))
 
     def test_unknown_datainfo_type(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {'type': 'nope'}
         assert_has(check(d), (ERROR, "unknown datainfo type 'nope'",
                               'Module m:Parameter value:Property datainfo'))
 
     def test_missing_required_dataprop(self):
         """Int datainfo requires min/max; omitting them triggers error."""
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {'type': 'int'}
         assert_has(check(d),
                    (ERROR, "missing required property for datainfo type int: 'min'",
@@ -307,7 +319,7 @@ class TestDatainfoStructure:
                     'Module m:Parameter value:Property datainfo'))
 
     def test_unknown_dataprop(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {
             'type': 'double', 'unit': 'K', 'garbage': 1}
         assert_has(check(d),
@@ -317,7 +329,7 @@ class TestDatainfoStructure:
 
     def test_bad_enum_in_tuple_members(self):
         """Array(Datainfo): nested datainfo inside tuple is validated."""
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles']['_x'] = {
             'description': 'x',
             'datainfo': {
@@ -337,7 +349,7 @@ class TestDatainfoStructure:
 
     def test_bad_enum_in_struct_members(self):
         """Struct(fieldtype=Datainfo): nested datainfo inside struct is validated."""
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles']['_x'] = {
             'description': 'x',
             'datainfo': {
@@ -357,7 +369,7 @@ class TestDatainfoStructure:
 
     def test_bad_enum_in_tuple_dataprop(self):
         """Tuple(Datainfo...): datainfo inside tuple-typed dataprop is validated."""
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles']['_x'] = {
             'description': 'x',
             'datainfo': {
@@ -377,7 +389,7 @@ class TestDatainfoStructure:
 
     def test_bad_enum_in_named_struct_dataprop(self):
         """Struct(fieldtypes=...): validates nested datainfo in named struct."""
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles']['_x'] = {
             'description': 'x',
             'datainfo': {
@@ -399,7 +411,7 @@ class TestDatainfoStructure:
 class TestDatainfoTemplate:
     def test_missing_required_datainfo_key(self):
         """Status should have 'members' key; omitting it triggers error."""
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['status']['datainfo'] = {'type': 'tuple'}
         assert_has(check(d),
                    (ERROR,
@@ -410,7 +422,7 @@ class TestDatainfoTemplate:
 
     def test_datainfo_type_mismatch(self):
         """Status should have type 'tuple'; using 'string' triggers error."""
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['status']['datainfo'] = {'type': 'string'}
         assert_has(check(d),
                    (ERROR, "expected datainfo type 'tuple', got 'string'",
@@ -418,7 +430,7 @@ class TestDatainfoTemplate:
 
     def test_datainfo_nested_type_mismatch(self):
         """Status members[0] should be 'enum'; using 'string' triggers error."""
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['status']['datainfo'] = {
             'type': 'tuple',
             'members': [
@@ -432,7 +444,7 @@ class TestDatainfoTemplate:
 
     def test_pollinterval_type_mismatch(self):
         """Pollinterval should have {type: double}; string triggers error."""
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles'] = {
             'value': READ_ACS['value'],
             'status': READ_ACS['status'],
@@ -449,7 +461,7 @@ class TestDatainfoTemplate:
 
     def test_datainfo_any_pass(self):
         """'any' type should not raise template validation errors."""
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['datainfo'] = {'type': 'any'}
         diags = check(d)
         assert not any('expected datainfo' in d.msg for d in diags)
@@ -457,14 +469,14 @@ class TestDatainfoTemplate:
 
 class TestParameterChecks:
     def test_missing_required_param(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         del d['modules']['m']['accessibles']['status']
         assert_has(check(d),
                    (ERROR, 'missing required parameter status from Interface Readable',
                     'Module m'))
 
     def test_nonstandard_param_no_prefix(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['extra'] = {
             'description': 'e', 'datainfo': {'type': 'double'},
             'readonly': True}
@@ -472,7 +484,7 @@ class TestParameterChecks:
                               'Module m:Parameter extra'))
 
     def test_nonstandard_param(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['_extra'] = {
             'description': 'e', 'datainfo': {'type': 'double'},
             'readonly': True}
@@ -480,7 +492,7 @@ class TestParameterChecks:
         assert not diags
 
     def test_constant_not_readonly(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['constant'] = 42.0
         d['modules']['m']['accessibles']['value']['readonly'] = False
         assert_has(check(d),
@@ -490,19 +502,19 @@ class TestParameterChecks:
                     'Module m:Parameter value'))
 
     def test_constant_wrong_type(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['constant'] = 'not a number'
         assert_has(check(d), (ERROR, "expected double, got 'not a number'",
                               'Module m:Parameter value:constant value'))
 
     def test_readonly_mismatch_should_be_readonly(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['accessibles']['value']['readonly'] = False
         assert_has(check(d), (WARNING, 'parameter should be readonly',
                               'Module m:Parameter value'))
 
     def test_readonly_mismatch_should_not_be_readonly(self):
-        d = deepcopy(READABLE)
+        d = deepcopy(READABLE_NODE)
         d['modules']['m']['interface_classes'] = ['Writable']
         d['modules']['m']['accessibles']['target'] = {
             'description': 't', 'datainfo': {'type': 'double', 'unit': 'K'},
@@ -513,28 +525,28 @@ class TestParameterChecks:
 
 class TestCommandChecks:
     def test_missing_required_command(self):
-        d = deepcopy(DRIVABLE)
+        d = deepcopy(DRIVABLE_NODE)
         del d['modules']['m']['accessibles']['stop']
         assert_has(check(d),
                    (ERROR, 'missing required command stop from Interface Drivable',
                     'Module m'))
 
     def test_nonstandard_command_no_prefix(self):
-        d = deepcopy(DRIVABLE)
+        d = deepcopy(DRIVABLE_NODE)
         d['modules']['m']['accessibles']['mycmd'] = {
             'description': 'c', 'datainfo': {'type': 'command'}}
         assert_has(check(d), (WARNING, "non-standard commands need '_' as a prefix",
                               'Module m:Command mycmd'))
 
     def test_cmd_unexpected_argument(self):
-        d = deepcopy(DRIVABLE)
+        d = deepcopy(DRIVABLE_NODE)
         d['modules']['m']['accessibles']['stop']['datainfo'] = {
             'type': 'command', 'argument': {'type': 'double'}}
         assert_has(check(d), (WARNING, 'command should not have an argument',
                               'Module m:Command stop'))
 
     def test_cmd_unexpected_result(self):
-        d = deepcopy(DRIVABLE)
+        d = deepcopy(DRIVABLE_NODE)
         d['modules']['m']['accessibles']['stop']['datainfo'] = {
             'type': 'command', 'result': {'type': 'double'}}
         assert_has(check(d), (WARNING, 'command should not have a result',
@@ -550,7 +562,7 @@ class TestCommandChecks:
 
 class TestPostfixedParams:
     def test_missing_base_param(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles'] = {
             'value_min': {
                 'description': 'vmin',
@@ -566,7 +578,7 @@ class TestPostfixedParams:
                     'Module m:Parameter value_min'))
 
     def test_wrong_datatype(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles'] = {
             'value': {
                 'description': 'value',
@@ -584,7 +596,7 @@ class TestPostfixedParams:
                     'Module m:Parameter value_min'))
 
     def test_valid_postfixed_param(self):
-        d = deepcopy(MIN)
+        d = deepcopy(MIN_NODE)
         d['modules']['m']['accessibles'] = {
             'value': READ_ACS['value'],
             'value_min': {
