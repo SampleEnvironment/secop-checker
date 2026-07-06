@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -41,6 +42,45 @@ if TYPE_CHECKING:
 
 desc_dict = dict[str, Any]
 source = str | None
+
+
+def build_line_map(text: str) -> dict[str, int]:
+    lines = text.splitlines()
+    path: list[str] = []
+    line_map: dict[str, int] = {}
+    for i, line in enumerate(lines):
+        m = re.match(r'^(\s*)"([^"]+)":', line)
+        if not m:
+            continue
+        key = m.group(2)
+        depth = len(m.group(1)) // 2
+        while len(path) >= depth:
+            path.pop()
+        path.append(key)
+        line_map['.'.join(path)] = i
+    return line_map
+
+
+def ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> str:
+    parts: list[str] = []
+    for item in ctxpath:
+        if isinstance(item, ctx.Module):
+            parts += ['modules', item.name]
+        elif isinstance(item, ctx.Property):
+            parts.append(item.name)
+        elif isinstance(item, (ctx.Parameter, ctx.Command)):
+            parts += ['accessibles', item.name]
+        elif isinstance(item, ctx.ConstantValue):
+            parts.append('constant')
+        elif isinstance(item, ctx.Argument):
+            parts.append('argument')
+        elif isinstance(item, ctx.Result):
+            parts.append('result')
+        elif isinstance(item, ctx.Datainfo):
+            parts.append('datainfo')
+            if item.name:
+                parts.append(item.name)
+    return '.'.join(parts)
 
 
 class Checker(DiagnosticBase):

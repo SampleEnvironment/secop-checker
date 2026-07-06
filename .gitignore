@@ -4,5 +4,6 @@ build/
 dist/
 *.egg-info
 .venv/
+web/*.whl
 /uv.lock
 /*.json

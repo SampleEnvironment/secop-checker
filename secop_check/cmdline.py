@@ -23,7 +23,6 @@
 
 import argparse
 import json
-import re
 import sys
 import traceback
 
@@ -42,8 +41,7 @@ from . import (
     Severity,
     load_from_node,
 )
-from . import context as ctx
-from .checker import Checker
+from .checker import Checker, build_line_map, ctx_to_json_path
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -63,47 +61,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help='additional schema repository file to read')
     return parser.parse_args(argv)
 
-
-def _build_line_map(text: str) -> dict[str, int]:
-    lines = text.splitlines()
-    path: list[str] = []
-    line_map: dict[str, int] = {}
-    for i, line in enumerate(lines):
-        m = re.match(r'^(\s*)"([^"]+)":', line)
-        if not m:
-            continue
-        key = m.group(2)
-        depth = len(m.group(1)) // 2
-        while len(path) >= depth:
-            path.pop()
-        path.append(key)
-        line_map['.'.join(path)] = i
-    return line_map
-
-
-def _ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> str | None:
-    parts: list[str] = []
-    for item in ctxpath:
-        if isinstance(item, ctx.Module):
-            parts += ['modules', item.name]
-        elif isinstance(item, ctx.Property):
-            parts.append(item.name)
-        elif isinstance(item, (ctx.Parameter, ctx.Command)):
-            parts += ['accessibles', item.name]
-        elif isinstance(item, ctx.ConstantValue):
-            parts.append('constant')
-        elif isinstance(item, ctx.Argument):
-            parts.append('argument')
-        elif isinstance(item, ctx.Result):
-            parts.append('result')
-        elif isinstance(item, ctx.Datainfo):
-            parts.append('datainfo')
-            if item.name:
-                parts.append(item.name)
-        else:
-            # SECNode (root), File, Generic → skip
-            pass
-    return '.'.join(parts)
 
 
 def _render_summary(checker: Checker, console: Console) -> None:
@@ -141,14 +98,14 @@ def _render_summary(checker: Checker, console: Console) -> None:
 def _render_annotated(checker: Checker, raw_json: str) -> None:
     obj = json.loads(raw_json)
     text = json.dumps(obj, indent=2)
-    line_map = _build_line_map(text)
+    line_map = build_line_map(text)
     lines = text.splitlines()
     num_width = len(str(len(lines))) + 3
 
     # Group diagnostics by JSON-path → line
     line_diags: dict[int, list] = {}
     for d in checker.get_diags():
-        path = _ctx_to_json_path(d.ctx.path)
+        path = ctx_to_json_path(d.ctx.path)
         if path not in line_map:
             continue
         line = line_map[path]

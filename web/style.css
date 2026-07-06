@@ -1,31 +1,115 @@
-.wrapper {
-  margin: auto;
+:root {
+  --color-severity-catastrophic: rgb(160, 10, 10);
+  --color-severity-error: rgb(190, 30, 50);
+  --color-severity-warning: rgb(230, 110, 0);
+  --color-severity-hint: rgb(160, 160, 160);
+  --color-amber: rgb(130, 90, 0);
+  --color-amber-faded: rgba(130, 90, 0, 0.2);
+  --color-ok: rgb(34, 139, 34);
+  --color-ok-text: rgb(0, 130, 0);
+  --color-summary-hint: rgb(120, 120, 120);
 }
 
-.maininput {
-  width: 100%;
-  resize: vertical;
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: bold;
+  background: rgb(255, 243, 205);
+  color: var(--color-amber);
+}
+
+.status-badge.ready {
+  background: rgb(220, 255, 220);
+  color: rgb(0, 100, 0);
+}
+
+.status-badge.failed {
+  background: rgb(255, 225, 225);
+  color: rgb(150, 0, 0);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2.5px solid var(--color-amber-faded);
+  border-top-color: var(--color-amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.status-badge.ready .spinner {
+  display: none;
+}
+
+.status-badge.failed .spinner {
+  display: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.check-spinner-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+.spinner-large {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
+
+.summary-bar {
+  display: flex;
+  gap: 1em;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #ddd;
+}
+
+.summary-catastrophic { color: var(--color-severity-catastrophic); font-weight: bold; }
+.summary-error { color: var(--color-severity-error); font-weight: bold; }
+.summary-warning { color: var(--color-severity-warning); font-weight: bold; }
+.summary-hint { color: var(--color-summary-hint); }
+.summary-ok { color: var(--color-ok-text); font-weight: bold; }
+
+.version-select {
+  width: auto;
+  margin-left: -1em;
 }
 
 #results {
   padding-top: 5px;
 }
 
+.action-row {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--pico-spacing) * 2);
+}
+
 /* --- Diagnostic Panel --- */
 .diag {
   border: 1px solid;
-  border-radius: 6px;
-  margin: 6px 0;
   overflow: hidden;
 }
 
-.diag-title {
+.diag > header {
   text-align: center;
   font-weight: bold;
   font-size: 0.8em;
   letter-spacing: 0.1em;
   padding: 3px 0;
   color: #fff;
+  border-bottom: none;
+  margin-bottom: 0;
 }
 
 .diag-body {
@@ -46,7 +130,7 @@
 /* --- Severity variants --- */
 .ok {
   background-color: rgb(220, 255, 220);
-  border-color: rgb(34, 139, 34);
+  border-color: var(--color-ok);
   padding: 8px 12px;
   font-weight: bold;
   text-align: center;
@@ -54,39 +138,39 @@
 
 .hint {
   background-color: rgb(245, 245, 245);
-  border-color: rgb(180, 180, 180);
+  border-color: var(--color-severity-hint);
 }
 
-.hint .diag-title {
-  background: rgb(160, 160, 160);
+.hint > header {
+  background: var(--color-severity-hint);
 }
 
 .warning {
   background-color: rgb(255, 248, 240);
-  border-color: rgb(255, 126, 0);
+  border-color: var(--color-severity-warning);
 }
 
-.warning .diag-title {
-  background: rgb(230, 110, 0);
+.warning > header {
+  background: var(--color-severity-warning);
 }
 
 .error {
   background-color: rgb(255, 245, 245);
-  border-color: rgb(200, 50, 70);
+  border-color: var(--color-severity-error);
 }
 
-.error .diag-title {
-  background: rgb(190, 30, 50);
+.error > header {
+  background: var(--color-severity-error);
 }
 
 .catastrophic {
   background-color: rgb(255, 240, 240);
-  border-color: rgb(160, 20, 20);
+  border-color: var(--color-severity-catastrophic);
   border-width: 2px;
 }
 
-.catastrophic .diag-title {
-  background: rgb(160, 10, 10);
+.catastrophic > header {
+  background: var(--color-severity-catastrophic);
 }
 
 /* --- Annotated table --- */
@@ -141,19 +225,19 @@
 }
 
 .annotated .ann-badge.error {
-  background: rgb(190, 30, 50);
+  background: var(--color-severity-error);
 }
 
 .annotated .ann-badge.warning {
-  background: rgb(230, 110, 0);
+  background: var(--color-severity-warning);
 }
 
 .annotated .ann-badge.hint {
-  background: rgb(160, 160, 160);
+  background: var(--color-severity-hint);
 }
 
 .annotated .ann-badge.catastrophic {
-  background: rgb(160, 10, 10);
+  background: var(--color-severity-catastrophic);
 }
 
 .annotated .ann-step {
