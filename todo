@@ -1,3 +1,5 @@
-- implement systems
 - test with custom interface classes
 - mode for hinting at possible other properties?
+- version selectable in web
+- loading schema from github
+- loading schema from other urls

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SECoPCheck</title>
+  <link href="pico.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.js"></script>
+</head>
+<body>
+  <main class="container">
+    <div class="wrapper">
+      <section>
+        <h1>SECoP description check</h1>
+        <p id="status">Loading Python…</p>
+        <textarea id="inputBox" class="maininput"
+                  placeholder="Paste your SECoP JSON description here!"
+                  rows="8" cols="33"></textarea>
+        <br>
+        <button id="checkBtn" onclick="runCheck()" disabled>Check</button>
+        <label><input type="checkbox" id="annotateCb"> Annotated</label>
+      </section>
+      <section>
+        <div id="results"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    let pyodide = null;
+
+    async function init() {
+      const status = document.getElementById('status');
+      try {
+        pyodide = await loadPyodide();
+        status.textContent = 'Loading micropip…';
+        await pyodide.loadPackage('micropip');
+        const micropip = pyodide.pyimport('micropip');
+        status.textContent = 'Loading secop-check…';
+        await micropip.install('./secop_check-0.1.0-py3-none-any.whl');
+        status.textContent = 'Ready';
+        document.getElementById('checkBtn').disabled = false;
+      } catch (e) {
+        status.textContent = 'Failed: ' + e.message;
+        console.error(e);
+      }
+    }
+
+    init();
+
+    async function runCheck() {
+      const text = document.getElementById('inputBox').value;
+      const results = document.getElementById('results');
+      const annotated = document.getElementById('annotateCb').checked;
+
+      if (!text.trim()) {
+        results.innerHTML = '<div class="diag hint">Please enter a SECoP description.</div>';
+        return;
+      }
+
+      pyodide.globals.set('input_text', text);
+      pyodide.globals.set('annotated_mode', annotated);
+
+      pyodide.runPython(`
+import json
+import re
+import traceback
+from secop_check.checker import Checker
+from secop_check import Catastrophe, Severity
+from secop_check import context as ctx
+
+def _ctx_to_json_path(ctxpath):
+    parts = []
+    for item in ctxpath:
+        if isinstance(item, ctx.Module):
+            parts += ["modules", item.name]
+        elif isinstance(item, ctx.Property):
+            parts.append(item.name)
+        elif isinstance(item, (ctx.Parameter, ctx.Command)):
+            parts += ["accessibles", item.name]
+        elif isinstance(item, ctx.ConstantValue):
+            parts.append("constant")
+        elif isinstance(item, ctx.Argument):
+            parts.append("argument")
+        elif isinstance(item, ctx.Result):
+            parts.append("result")
+        elif isinstance(item, ctx.Datainfo):
+            parts.append("datainfo")
+            if item.name:
+                parts.append(item.name)
+    return ".".join(parts)
+
+def _build_line_map(text):
+    lines = text.splitlines()
+    path = []
+    line_map = {}
+    for i, line in enumerate(lines):
+        m = re.match(r'^(\\s*)"([^"]+)":', line)
+        if not m:
+            continue
+        key = m.group(2)
+        depth = len(m.group(1)) // 2
+        while len(path) >= depth:
+            path.pop()
+        path.append(key)
+        line_map[".".join(path)] = i
+    return line_map
+
+try:
+    checker = Checker("2.0", [], output="none")
+    try:
+        checker.check(input_text)
+    except Catastrophe:
+        pass
+
+    diags = []
+    for d in checker.get_diags():
+        diags.append({
+            "severity": d.severity.name.lower(),
+            "step": d.step,
+            "msg": d.msg,
+            "ctx": " / ".join(str(p) for p in d.ctx.path).strip(),
+        })
+
+    result = {"diags": diags}
+
+    if annotated_mode:
+        try:
+            obj = json.loads(input_text)
+            pretty = json.dumps(obj, indent=2)
+            lines = pretty.splitlines()
+            line_map = _build_line_map(pretty)
+            line_diags = {}
+            for d in checker.get_diags():
+                path = _ctx_to_json_path(d.ctx.path)
+                if path not in line_map:
+                    continue
+                line = line_map[path] + 1
+                entry = {
+                    "severity": d.severity.name.lower(),
+                    "step": d.step,
+                    "msg": d.msg,
+                }
+                line_diags.setdefault(line, []).append(entry)
+            result["annotation"] = {
+                "lines": lines,
+                "line_diags": {str(k): v for k, v in line_diags.items()},
+            }
+        except Exception:
+            pass
+
+except Exception as exc:
+    result = {
+        "diags": [{
+            "severity": "catastrophic",
+            "step": "python",
+            "msg": str(exc),
+            "ctx": traceback.format_exc(),
+        }]
+    }
+      `);
+
+      const result = pyodide.globals.get('result').toJs();
+
+      if (result.diags.length === 0) {
+        results.innerHTML = '<div class="ok">No errors found.</div>';
+        return;
+      }
+
+      if (result.annotation) {
+        results.innerHTML = renderAnnotated(result);
+      } else {
+        results.innerHTML = renderPanels(result.diags);
+      }
+    }
+
+    function renderPanels(diags) {
+      let html = '';
+      for (const d of diags) {
+        html += '<div class="diag ' + d.severity + '">';
+        html += '<div class="diag-title">' + d.severity.toUpperCase() + '</div>';
+        html += '<div class="diag-body">';
+        html += '<span class="step">[' + escapeHtml(d.step) + ']</span> ';
+        html += '<span class="ctx">' + escapeHtml(d.ctx) + '</span>';
+        html += '<div class="msg">' + escapeHtml(d.msg) + '</div>';
+        html += '</div></div>';
+      }
+      return html;
+    }
+
+    function renderAnnotated(result) {
+      const ann = result.annotation;
+      const lines = ann.lines;
+      const lineDiags = ann.line_diags;
+      let html = '<table class="annotated">';
+      for (let i = 0; i < lines.length; i++) {
+        const diags = lineDiags[i + 1] || [];
+        const rowClass = diags.length ? 'has-diag' : '';
+        html += '<tr class="' + rowClass + '">';
+        html += '<td class="json-line">' + highlightJson(lines[i]) + '</td>';
+        html += '<td class="diag-cell">';
+        for (const d of diags) {
+          html += '<span class="ann-badge ' + d.severity + '">' + d.severity.toUpperCase() + '</span>';
+          html += ' <span class="ann-step">[' + escapeHtml(d.step) + ']</span>';
+          html += ': ' + escapeHtml(d.msg);
+        }
+        html += '</td>';
+        html += '</tr>';
+      }
+      html += '</table>';
+      return html;
+    }
+
+    function highlightJson(line) {
+      const tokenRe = /("(?:[^"\\]|\\.)*")\s*:|("(?:[^"\\]|\\.)*")|(\btrue\b|\bfalse\b|\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+      return line.replace(tokenRe, function(match, key, str, lit, num) {
+        if (key) return '<span class="j-key">' + escapeHtml(key) + '</span>:';
+        if (str) return '<span class="j-str">' + escapeHtml(str) + '</span>';
+        if (lit) return '<span class="j-lit">' + escapeHtml(lit) + '</span>';
+        if (num) return '<span class="j-num">' + escapeHtml(num) + '</span>';
+        return escapeHtml(match);
+      });
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>

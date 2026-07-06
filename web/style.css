@@ -1,0 +1,167 @@
+.wrapper {
+  margin: auto;
+}
+
+.maininput {
+  width: 100%;
+  resize: vertical;
+}
+
+#results {
+  padding-top: 5px;
+}
+
+/* --- Diagnostic Panel --- */
+.diag {
+  border: 1px solid;
+  border-radius: 6px;
+  margin: 6px 0;
+  overflow: hidden;
+}
+
+.diag-title {
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.8em;
+  letter-spacing: 0.1em;
+  padding: 3px 0;
+  color: #fff;
+}
+
+.diag-body {
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.diag-body .step {
+  font-weight: bold;
+}
+
+.diag-body .msg {
+  margin-top: 0.5em;
+}
+
+/* --- Severity variants --- */
+.ok {
+  background-color: rgb(220, 255, 220);
+  border-color: rgb(34, 139, 34);
+  padding: 8px 12px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.hint {
+  background-color: rgb(245, 245, 245);
+  border-color: rgb(180, 180, 180);
+}
+
+.hint .diag-title {
+  background: rgb(160, 160, 160);
+}
+
+.warning {
+  background-color: rgb(255, 248, 240);
+  border-color: rgb(255, 126, 0);
+}
+
+.warning .diag-title {
+  background: rgb(230, 110, 0);
+}
+
+.error {
+  background-color: rgb(255, 245, 245);
+  border-color: rgb(200, 50, 70);
+}
+
+.error .diag-title {
+  background: rgb(190, 30, 50);
+}
+
+.catastrophic {
+  background-color: rgb(255, 240, 240);
+  border-color: rgb(160, 20, 20);
+  border-width: 2px;
+}
+
+.catastrophic .diag-title {
+  background: rgb(160, 10, 10);
+}
+
+/* --- Annotated table --- */
+.annotated {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: monospace;
+  font-size: 0.85em;
+  margin-top: 4px;
+}
+
+.annotated, .annotated tr, .annotated td, .annotated tbody, .annotated thead {
+  border: none;
+}
+
+.annotated td {
+  padding: 2px 2px 2px 8px;
+  vertical-align: top;
+}
+
+.annotated .json-line {
+  white-space: pre-wrap;
+  width: 50%;
+  padding-right: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.annotated .diag-cell {
+  white-space: pre-wrap;
+}
+
+.annotated tr.has-diag .json-line {
+  background: rgb(255, 242, 242);
+}
+
+.annotated tr.has-diag .diag-cell {
+  background: rgb(255, 242, 242);
+}
+
+.annotated tr:not(.has-diag) .diag-cell {
+  color: #ccc;
+}
+
+.annotated .ann-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 3px;
+  color: #fff;
+}
+
+.annotated .ann-badge.error {
+  background: rgb(190, 30, 50);
+}
+
+.annotated .ann-badge.warning {
+  background: rgb(230, 110, 0);
+}
+
+.annotated .ann-badge.hint {
+  background: rgb(160, 160, 160);
+}
+
+.annotated .ann-badge.catastrophic {
+  background: rgb(160, 10, 10);
+}
+
+.annotated .ann-step {
+  font-weight: bold;
+}
+
+/* --- JSON highlighting --- */
+.j-key { color: rgb(0, 90, 180); }
+.j-str { color: rgb(30, 140, 30); }
+.j-num { color: rgb(180, 100, 20); }
+.j-lit { color: rgb(140, 40, 180); }
