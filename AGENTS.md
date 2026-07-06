@@ -7,7 +7,6 @@ Schema checker for SECoP descriptive metadata. Python 3.12+.
 ```sh
 uv run pytest                          # run all tests
 uv run pytest test/test_basic.py -k <name>  # single test
-uv run --group typing mypy secop_check # mypy only
 ./typecheck                            # full typecheck: mypy + pyright + ty
 uv run ruff check                      # lint (ALL rules selected)
 uv run ruff check --fix                # lint + autofix
@@ -41,4 +40,3 @@ Configured in `pyproject.toml` under `[tool.ruff.lint]`. Select ALL, ignore D1/D
 
 - `/*.json` in `.gitignore` — top-level JSON files are git-ignored (test data lives in `test/data/`)
 - Tests hardcode version `'1.1'` — update if adding new version fixtures
-- `ty` (from `typing` dep group) is a third-party type checker, used in the `typecheck` script
