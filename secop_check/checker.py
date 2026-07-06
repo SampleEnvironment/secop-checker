@@ -47,7 +47,7 @@ class Checker(DiagnosticBase):
     def __init__(self, version: str, additional: list[str], output: str) -> None:
         super().__init__(output)
 
-        self.loader = Loader(Path(__file__).parents[1] / 'defs', output)
+        self.loader = Loader(Path(__file__).parent / 'defs', output)
         self.loader.set_diags(self._diags)
         self.loader.load(version, additional)
 

@@ -31,6 +31,9 @@ cache-keys = [{file = "pyproject.toml"}, {git = {commit = true, tags = true}}]
 [tool.setuptools.packages.find]
 include = ["secop_check*"]
 
+[tool.setuptools.package-data]
+secop_check = ["defs/*.yaml"]
+
 [tool.setuptools_scm]
 
 [tool.ruff.lint]
