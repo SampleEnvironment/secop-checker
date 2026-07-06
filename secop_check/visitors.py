@@ -27,8 +27,10 @@ import re
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from . import Severity
+from .context import Command as CtxCommand
 from .context import ConstantValue
 from .context import Module as CtxModule
+from .context import Parameter as CtxParameter
 from .context import Property as CtxProperty
 from .context import System as CtxSystem
 from .dataty import Dataty
@@ -300,7 +302,7 @@ class SystemChecker(BaseVisitor):
         modules_map = desc.get('modules', {})
         if not isinstance(modules_map, dict):
             self.checker.emit(Severity.ERROR,
-                              "'modules' must be a dict")
+                              "'modules' in systems must be a dict")
             return
 
         self._check_module_mappings(
@@ -378,19 +380,22 @@ class SystemChecker(BaseVisitor):
         if self._has_raw_specs(spec.parameters):
             for pspec in cast('list[dict[str, dict]]', spec.parameters):
                 for pname, pprops in pspec.items():
-                    self._check_param_spec(pname, pprops, accessibles)
+                    with self.checker.with_context(CtxParameter(pname)):
+                        self._check_param_spec(pname, pprops, accessibles)
 
         # 3. command specs
         if self._has_raw_specs(spec.commands):
             for cspec in cast('list[dict[str, dict]]', spec.commands):
                 for cname, cprops in cspec.items():
-                    self._check_cmd_spec(cname, cprops, accessibles)
+                    with self.checker.with_context(CtxCommand(cname)):
+                        self._check_cmd_spec(cname, cprops, accessibles)
 
         # 4. module-level property specs
         if self._has_raw_specs(spec.properties):
             for mpspec in cast('list[dict[str, dict]]', spec.properties):
                 for pname, pprops in mpspec.items():
-                    self._check_mod_prop_spec(pname, pprops, actual)
+                    with self.checker.with_context(CtxProperty(pname)):
+                        self._check_mod_prop_spec(pname, pprops, actual)
 
     def _check_interface_class(self, spec: Interface, actual: dict) -> None:
         required = spec.name
@@ -426,7 +431,7 @@ class SystemChecker(BaseVisitor):
             if not optional:
                 self.checker.emit(
                     Severity.ERROR,
-                    f'missing required parameter {pname!r}',
+                    'parameter is required by the system definition',
                 )
             return
 
@@ -470,8 +475,8 @@ class SystemChecker(BaseVisitor):
                 and not (etype == 'string' and atype == 'enum'):
             self.checker.emit(
                     Severity.ERROR,
-                    f'parameter {pname!r} has datainfo type {atype!r}, '
-                    f'expected {etype!r}',
+                    f"datainfo type is {atype!r}, "
+                    f"expected {etype!r} from system definition",
                 )
         for key, evalue in expected.items():
             if key in {'type', 'description'}:
@@ -479,14 +484,14 @@ class SystemChecker(BaseVisitor):
             if key not in actual:
                 self.checker.emit(
                     Severity.ERROR,
-                    f'parameter {pname!r} missing datainfo property '
-                    f'{key!r} (expected {evalue!r})',
+                    f"missing datainfo property {key!r} "
+                    f"(expected {evalue!r} from system definition)",
                 )
             elif actual[key] != evalue:
                 self.checker.emit(
                     Severity.ERROR,
-                    f'parameter {pname!r} datainfo.{key} is '
-                    f'{actual[key]!r}, expected {evalue!r}',
+                    f"datainfo.{key} is {actual[key]!r}, "
+                    f"expected {evalue!r} from system definition",
                 )
 
     def _check_cmd_spec(self, cname: str, cprops: dict,
@@ -511,14 +516,18 @@ class SystemChecker(BaseVisitor):
                 if mismatches:
                     self.checker.emit(
                         Severity.ERROR,
-                        f'module property {pname!r} mismatches: '
+                        f'value does not match system definition: '
                         f'{mismatches}',
                     )
             elif actual_val != forced_val:
+                if actual_val is None:
+                    extra = 'does not exist, expected'
+                else:
+                    extra = f'is {actual_val!r}, expected'
                 self.checker.emit(
                     Severity.ERROR,
-                    f'module property {pname!r} has {actual_val!r}, '
-                    f'expected {forced_val!r}',
+                    f'property {extra} {forced_val!r} '
+                    f'from system definition',
                 )
 
     def _check_system_props(self, sysdesc: dict,

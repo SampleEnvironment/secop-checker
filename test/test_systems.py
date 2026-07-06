@@ -215,7 +215,8 @@ class TestSystems:
             },
         }
         assert_has(check(d, SYSTEM_FIXTURE, version='2.0'),
-                   (ERROR, "'modules' must be a dict", 'System test'))
+                   (ERROR, "'modules' in systems must be a dict",
+                    'System test'))
 
 
 STATUS_ACS = {
@@ -296,12 +297,12 @@ class TestSystemSpecs:
         di.clear()
         di.update({'type': 'string'})
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "parameter 'value' has datainfo type "
-                    "'string', expected 'double'",
-                    'System te:Module temperature_sample'),
-                   (ERROR, "parameter 'value' missing datainfo "
-                    "property 'unit' (expected 'K')",
-                    'System te:Module temperature_sample'))
+                   (ERROR, "datainfo type is 'string', expected 'double' "
+                    'from system definition',
+                    'System te:Module temperature_sample:Parameter value'),
+                   (ERROR, "missing datainfo property 'unit' "
+                    "(expected 'K' from system definition)",
+                    'System te:Module temperature_sample:Parameter value'))
 
     def test_te_param_wrong_unit(self):
         """Parameter datainfo unit mismatch on system module."""
@@ -309,9 +310,9 @@ class TestSystemSpecs:
         di = d['modules']['temperature_sample']['accessibles']['value']['datainfo']
         di['unit'] = 'degC'
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "parameter 'value' datainfo.unit is "
-                    "'degC', expected 'K'",
-                    'System te:Module temperature_sample'))
+                   (ERROR, "datainfo.unit is 'degC', expected 'K' "
+                    'from system definition',
+                    'System te:Module temperature_sample:Parameter value'))
 
     def test_te_param_missing_unit(self):
         """Parameter missing required datainfo key on system module."""
@@ -319,17 +320,17 @@ class TestSystemSpecs:
         di = d['modules']['temperature_sample']['accessibles']['value']['datainfo']
         del di['unit']
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "parameter 'value' missing datainfo "
-                    "property 'unit' (expected 'K')",
-                    'System te:Module temperature_sample'))
+                   (ERROR, "missing datainfo property 'unit' (expected 'K' "
+                    'from system definition)',
+                    'System te:Module temperature_sample:Parameter value'))
 
     def test_te_missing_required_param(self):
         """Missing required parameter on system module."""
         d = _valid_te_node()
         del d['modules']['temperature_sample']['accessibles']['value']
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "missing required parameter 'value'",
-                    'System te:Module temperature_sample'),
+                   (ERROR, "parameter is required by the system definition",
+                    'System te:Module temperature_sample:Parameter value'),
                    (ERROR, 'missing required parameter value '
                     'from Interface Readable',
                     'Module temperature_sample'))
@@ -339,9 +340,9 @@ class TestSystemSpecs:
         d = _valid_te_node()
         d['modules']['temperature_sample']['meaning'] = {'function': 'bad'}
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "module property 'meaning' mismatches: "
+                   (ERROR, "value does not match system definition: "
                     "{'function': ('bad', 'temperature')}",
-                    'System te:Module temperature_sample'),
+                    'System te:Module temperature_sample:Property meaning'),
                    (ERROR, 'expected struct with fields: function',
                     'Module temperature_sample:Property meaning'))
 
@@ -359,6 +360,6 @@ class TestSystemSpecs:
         d = _valid_te_node()
         del d['modules']['temperature_sample']['meaning']
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "module property 'meaning' has "
-                    "None, expected {'function': 'temperature'}",
-                    'System te:Module temperature_sample'))
+                   (ERROR, 'property does not exist, expected '
+                   "{'function': 'temperature'} from system definition",
+                   'System te:Module temperature_sample:Property meaning'))
