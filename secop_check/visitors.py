@@ -106,13 +106,20 @@ class BasicStructureChecker(BaseVisitor):
 
     def visit_secnode(self, description: desc_dict) -> None:
         if 'modules' not in description:
-            self.checker.emit(Severity.ERROR, 'missing dict of modules')
+            self.checker.emit(Severity.ERROR, 'missing object of modules')
+            description['modules'] = {}
+        elif not isinstance(description['modules'], dict):
+            self.checker.emit(Severity.ERROR, 'modules must be an object')
             description['modules'] = {}
 
     def visit_module(self, name: str, description: desc_dict) -> None:
         if 'accessibles' not in description:
             self.checker.emit(Severity.ERROR,
-                              'missing dict of module accessibles')
+                              'missing object of module accessibles')
+            description['accessibles'] = {}
+        elif not isinstance(description['accessibles'], dict):
+            self.checker.emit(Severity.ERROR,
+                              'accessibles must be an object')
             description['accessibles'] = {}
 
 
@@ -221,7 +228,7 @@ class SystemChecker(BaseVisitor):
         systems = description.get('systems', {})
         if not isinstance(systems, dict):
             self.checker.emit(Severity.ERROR,
-                              "'systems' must be a dict")
+                              "'systems' must be an object")
             return
 
         module_names = set(description.get('modules', {}))
@@ -240,7 +247,7 @@ class SystemChecker(BaseVisitor):
                    sys_props: dict[str, tuple]) -> None:
         if not isinstance(sysdesc, dict):
             self.checker.emit(Severity.ERROR,
-                              'systems entry must be a dict')
+                              'systems entry must be an object')
             return
 
         desc = cast('desc_dict', sysdesc)
@@ -302,7 +309,7 @@ class SystemChecker(BaseVisitor):
         modules_map = desc.get('modules', {})
         if not isinstance(modules_map, dict):
             self.checker.emit(Severity.ERROR,
-                              "'modules' in systems must be a dict")
+                              "'modules' in systems must be an object")
             return
 
         self._check_module_mappings(

@@ -100,7 +100,7 @@ class TestSystems:
         d = deepcopy(MIN_NODE)
         d['systems'] = {'bad': 'not a dict'}
         assert_has(check(d, SYSTEM_FIXTURE, version='2.0'),
-                   (ERROR, 'systems entry must be a dict', 'System bad'))
+                   (ERROR, 'systems entry must be an object', 'System bad'))
 
     def test_missing_system_key(self):
         """System entry without 'system' key is an error."""
@@ -215,7 +215,7 @@ class TestSystems:
             },
         }
         assert_has(check(d, SYSTEM_FIXTURE, version='2.0'),
-                   (ERROR, "'modules' in systems must be a dict",
+                   (ERROR, "'modules' in systems must be an object",
                     'System test'))
 
 

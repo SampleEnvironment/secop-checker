@@ -176,12 +176,23 @@ class TestBasicStructure:
     def test_missing_modules(self):
         d = deepcopy(MIN_NODE)
         del d['modules']
-        assert_has(check(d), (ERROR, 'missing dict of modules', ''))
+        assert_has(check(d), (ERROR, 'missing object of modules', ''))
 
     def test_missing_accessibles(self):
         d = deepcopy(MIN_NODE)
         del d['modules']['m']['accessibles']
-        assert_has(check(d), (ERROR, 'missing dict of module accessibles',
+        assert_has(check(d), (ERROR, 'missing object of module accessibles',
+                              'Module m'))
+
+    def test_modules_not_dict(self):
+        d = deepcopy(MIN_NODE)
+        d['modules'] = 'str'
+        assert_has(check(d), (ERROR, 'modules must be an object', ''))
+
+    def test_accessibles_not_dict(self):
+        d = deepcopy(MIN_NODE)
+        d['modules']['m']['accessibles'] = 'str'
+        assert_has(check(d), (ERROR, 'accessibles must be an object',
                               'Module m'))
 
 
