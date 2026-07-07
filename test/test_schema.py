@@ -164,8 +164,8 @@ class TestConverterRepositoryCatastrophes:
         with pytest.raises(Catastrophe):
             _checker_with_yaml(yaml, tmp_path)
 
-    def test_repo_missing_required_field(self, tmp_path):
-        yaml = BASE_REPO.replace('datainfo: []\n', '')
+    def test_repo_wrong_field_type_2(self, tmp_path):
+        yaml = BASE_REPO.replace('datainfo: []\n', 'datainfo: 0\n')
         with pytest.raises(Catastrophe):
             _checker_with_yaml(yaml, tmp_path)
 

@@ -71,7 +71,6 @@
   gap: 1em;
   padding: 6px 10px;
   margin-bottom: 6px;
-  border-bottom: 1px solid #ddd;
 }
 
 .summary-catastrophic { color: var(--color-severity-catastrophic); font-weight: bold; }
@@ -176,13 +175,15 @@
 /* --- Annotated table --- */
 .annotated {
   width: 100%;
+  border-top: 1px solid #ddd;
+  border-bottom: 1px solid #ddd;
   border-collapse: collapse;
   font-family: monospace;
   font-size: 0.85em;
   margin-top: 4px;
 }
 
-.annotated, .annotated tr, .annotated td, .annotated tbody, .annotated thead {
+.annotated tr, .annotated td, .annotated tbody, .annotated thead {
   border: none;
 }
 

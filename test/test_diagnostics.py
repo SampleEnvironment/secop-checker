@@ -32,13 +32,7 @@ import pytest
 
 from secop_check import Catastrophe, Severity
 from secop_check import Diagnostic as Diag
-from secop_check.checker import (
-    Checker,
-    build_line_map,
-    ctx_to_json_path,
-    desc_dict,
-)
-from secop_check import context as ctx
+from secop_check.checker import Checker, desc_dict
 from secop_check.context import SECNode as CtxSECNode
 
 ERROR = Severity.ERROR

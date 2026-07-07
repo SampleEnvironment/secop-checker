@@ -29,7 +29,8 @@ import json
 from typing import cast
 
 from secop_check import context as ctx
-from secop_check.checker import build_line_map, ctx_to_json_path
+from secop_check.formatting import _build_line_map as build_line_map
+from secop_check.formatting import _ctx_to_json_path as ctx_to_json_path
 
 
 def test_build_line_map_empty():
@@ -60,12 +61,14 @@ def test_ctx_to_json_path_module():
 
 
 def test_ctx_to_json_path_param():
-    path = cast(list[ctx.ContextItem], [ctx.Module('m1'), ctx.Parameter('value')])
+    path = cast('list[ctx.ContextItem]',
+                [ctx.Module('m1'), ctx.Parameter('value')])
     assert ctx_to_json_path(path) == 'modules.m1.accessibles.value'
 
 
 def test_ctx_to_json_path_command():
-    path = cast(list[ctx.ContextItem], [ctx.Module('m1'), ctx.Command('reset')])
+    path = cast('list[ctx.ContextItem]',
+                [ctx.Module('m1'), ctx.Command('reset')])
     assert ctx_to_json_path(path) == 'modules.m1.accessibles.reset'
 
 
@@ -74,14 +77,14 @@ def test_ctx_to_json_path_property():
 
 
 def test_ctx_to_json_path_datainfo():
-    path = cast(list[ctx.ContextItem],
+    path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('v'),
                  ctx.Datainfo('struct', '')])
     assert ctx_to_json_path(path) == 'modules.m1.accessibles.v.datainfo'
 
 
 def test_ctx_to_json_path_datainfo_named():
-    path = cast(list[ctx.ContextItem],
+    path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('v'),
                  ctx.Datainfo('struct', 'field_x')])
     assert ctx_to_json_path(path) == \
@@ -89,21 +92,21 @@ def test_ctx_to_json_path_datainfo_named():
 
 
 def test_ctx_to_json_path_constant():
-    path = cast(list[ctx.ContextItem],
+    path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('v'),
                  ctx.ConstantValue('')])
     assert ctx_to_json_path(path) == 'modules.m1.accessibles.v.constant'
 
 
 def test_ctx_to_json_path_argument():
-    path = cast(list[ctx.ContextItem],
+    path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Command('cmd'),
                  ctx.Argument('')])
     assert ctx_to_json_path(path) == 'modules.m1.accessibles.cmd.argument'
 
 
 def test_ctx_to_json_path_result():
-    path = cast(list[ctx.ContextItem],
+    path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Command('cmd'),
                  ctx.Result('')])
     assert ctx_to_json_path(path) == 'modules.m1.accessibles.cmd.result'

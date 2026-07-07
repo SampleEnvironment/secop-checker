@@ -329,7 +329,7 @@ class TestSystemSpecs:
         d = _valid_te_node()
         del d['modules']['temperature_sample']['accessibles']['value']
         assert_has(check(d, TEMP_SYSTEMS_FIXTURE, version='2.0'),
-                   (ERROR, "parameter is required by the system definition",
+                   (ERROR, 'parameter is required by the system definition',
                     'System te:Module temperature_sample:Parameter value'),
                    (ERROR, 'missing required parameter value '
                     'from Interface Readable',

@@ -482,8 +482,8 @@ class SystemChecker(BaseVisitor):
                 and not (etype == 'string' and atype == 'enum'):
             self.checker.emit(
                     Severity.ERROR,
-                    f"datainfo type is {atype!r}, "
-                    f"expected {etype!r} from system definition",
+                    f'datainfo type is {atype!r}, '
+                    f'expected {etype!r} from system definition',
                 )
         for key, evalue in expected.items():
             if key in {'type', 'description'}:
@@ -491,14 +491,14 @@ class SystemChecker(BaseVisitor):
             if key not in actual:
                 self.checker.emit(
                     Severity.ERROR,
-                    f"missing datainfo property {key!r} "
-                    f"(expected {evalue!r} from system definition)",
+                    f'missing datainfo property {key!r} '
+                    f'(expected {evalue!r} from system definition)',
                 )
             elif actual[key] != evalue:
                 self.checker.emit(
                     Severity.ERROR,
-                    f"datainfo.{key} is {actual[key]!r}, "
-                    f"expected {evalue!r} from system definition",
+                    f'datainfo.{key} is {actual[key]!r}, '
+                    f'expected {evalue!r} from system definition',
                 )
 
     def _check_cmd_spec(self, cname: str, cprops: dict,
@@ -566,7 +566,7 @@ class SystemChecker(BaseVisitor):
         if required:
             self.checker.emit(
                 Severity.ERROR,
-                "missing required properties: "
+                'missing required properties: '
                 f"{', '.join(map(repr, sorted(required)))}",
             )
 

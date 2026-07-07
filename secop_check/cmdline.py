@@ -22,18 +22,12 @@
 # *****************************************************************************
 
 import argparse
-import json
 import sys
 import traceback
 
 from rich.console import Console
-from rich.highlighter import JSONHighlighter
-from rich.panel import Panel
-from rich.text import Text
-from rich.theme import Theme
 
 from . import (
-    _SEVERITY_COLORS,
     Catastrophe,
     Context,
     Diagnostic,
@@ -41,7 +35,8 @@ from . import (
     Severity,
     load_from_node,
 )
-from .checker import Checker, build_line_map, ctx_to_json_path
+from .checker import Checker
+from .formatting import render_annotated, render_summary
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -60,84 +55,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument('--schema', action='append', default=[],
                         help='additional schema repository file to read')
     return parser.parse_args(argv)
-
-
-
-def _render_summary(checker: Checker, console: Console) -> None:
-    diags = checker.get_diags()
-    if not diags:
-        console.print()
-        console.print(Panel(
-            '[green]No issues found with the description.[/green]',
-            title=' Summary ',
-            border_style='green'))
-        return
-
-    highest = max(d.severity for d in diags)
-    border_color = _SEVERITY_COLORS[highest]
-
-    counts = dict.fromkeys(Severity, 0)
-    for d in diags:
-        counts[d.severity] += 1
-
-    content = Text()
-    content.append('Found issues with the description:\n')
-    for sev in (Severity.ERROR, Severity.WARNING, Severity.HINT):
-        c = counts[sev]
-        if not c:
-            continue
-        if content:
-            content.append('   ')
-        content.append(f'{sev.name}s: {c}', style=_SEVERITY_COLORS[sev])
-
-    console.print()
-    console.print(Panel(content, title=' Summary ',
-                        border_style=border_color))
-
-
-def _render_annotated(checker: Checker, raw_json: str) -> None:
-    obj = json.loads(raw_json)
-    text = json.dumps(obj, indent=2)
-    line_map = build_line_map(text)
-    lines = text.splitlines()
-    num_width = len(str(len(lines))) + 3
-
-    # Group diagnostics by JSON-path → line
-    line_diags: dict[int, list] = {}
-    for d in checker.get_diags():
-        path = ctx_to_json_path(d.ctx.path)
-        if path not in line_map:
-            continue
-        line = line_map[path]
-        line_diags.setdefault(line + 1, []).append(d)
-
-    highlighter = JSONHighlighter()
-    console = Console(theme=Theme({'json.key': 'blue'}))
-    sep_prefix = ' ' * (num_width + 1) + '│'
-    for i, line_text in enumerate(lines, 1):
-        row = Text()
-        row.append(f'{i:>{num_width}} │ ', style='dim')
-        hl = Text(line_text)
-        highlighter.highlight(hl)
-        hl.stylize('dim')
-        row.append(hl)
-        console.print(row)
-        if i in line_diags:
-            leading = len(line_text) - len(line_text.lstrip())
-            for d in line_diags[i]:
-                sev_color = _SEVERITY_COLORS[d.severity]
-                ann = Text()
-                ann.append('●', style=sev_color)
-                ann.append(' ' * num_width + '│' + ' ' * (leading + 1),
-                           style='dim')
-                ann.append(f'╰─ {d.severity.name}', style=f'bold {sev_color}')
-                if d.step:
-                    ann.append(f' [{d.step}]')
-                ann.append(f': {d.msg}',
-                           style=sev_color)
-                console.print(ann)
-            console.print(sep_prefix, style='dim')
-    _render_summary(checker, console)
 
 
 def main() -> None:
@@ -163,9 +80,9 @@ def main() -> None:
         checker = Checker(version, args.schema, output)
         checker.check(desc)
         if args.annotate:
-            _render_annotated(checker, desc)
+            render_annotated(checker.get_diags(), desc)
         elif output == 'text':
-            _render_summary(checker, Console())
+            render_summary(checker.get_diags(), Console())
     except Catastrophe:
         sys.exit(1)
     except Exception as e:  # noqa: BLE001

@@ -39,8 +39,6 @@ if TYPE_CHECKING:
     from .context import ContextItem
 
 from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
 
 
 # int-enum?
@@ -59,21 +57,6 @@ class Severity(Enum):
 
     def __ge__(self, other: Severity) -> bool:
         return self.value >= other.value
-
-
-_SEVERITY_BORDER = {
-    Severity.HINT: 'dim',
-    Severity.WARNING: 'yellow',
-    Severity.ERROR: 'red',
-    Severity.CATASTROPHIC: 'bold red',
-}
-
-_SEVERITY_COLORS = {
-    Severity.HINT: 'color(44)',
-    Severity.WARNING: 'color(142)',
-    Severity.ERROR: 'color(196)',
-    Severity.CATASTROPHIC: 'bold color(88)',
-}
 
 
 @dataclass
@@ -140,24 +123,8 @@ class DiagnosticBase:
             }))
             self._out.write('\n')
         elif self._output == 'text':
-            step = diag.step
-            ctx = ' / '.join(str(item) for item in diag.ctx.path).strip()
-            content = Text()
-            if step:
-                content.append(f'[{step}] ', style='bold')
-            if ctx:
-                content.append(ctx)
-                content.append('\n\n')
-            content.append(diag.msg)
-            if diag.ctx.traceback:
-                content.append('\n\n')
-                content.append(diag.ctx.traceback, style='color(244)')
-            self._richconsole.print(Panel(
-                content,
-                title=f' {diag.severity.name} ',
-                border_style=_SEVERITY_BORDER[diag.severity],
-                padding=(0, 1),
-            ))
+            from .formatting import print_diag_panel  # noqa: PLC0415
+            print_diag_panel(diag, self._richconsole)
 
 
 def load_from_node(addr: str) -> tuple[str, str]:

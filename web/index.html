@@ -92,7 +92,8 @@
       pyodide.runPython(`
 import json
 import traceback
-from secop_check.checker import Checker, build_line_map, ctx_to_json_path
+from secop_check.checker import Checker
+from secop_check.formatting import get_annotated_display
 from secop_check import Catastrophe, Severity
 
 try:
@@ -105,50 +106,35 @@ try:
     diags = []
     for d in checker.get_diags():
         diags.append({
-            "severity": d.severity.name.lower(),
-            "step": d.step,
-            "msg": d.msg,
-            "ctx": " / ".join(str(p) for p in d.ctx.path).strip(),
+            'severity': d.severity.name.lower(),
+            'step': d.step,
+            'msg': d.msg,
+            'ctx': ' / '.join(str(p) for p in d.ctx.path).strip(),
         })
 
-    summary = {"hint": 0, "warning": 0, "error": 0, "catastrophic": 0}
+    summary = {'hint': 0, 'warning': 0, 'error': 0, 'catastrophic': 0}
     for d in diags:
-        if d["severity"] in summary:
-            summary[d["severity"]] += 1
-    result = {"diags": diags, "summary": summary}
+        summary[d['severity']] += 1
+    result = {'diags': diags, 'summary': summary}
 
     if annotated_mode:
         try:
-            obj = json.loads(input_text)
-            pretty = json.dumps(obj, indent=2)
-            lines = pretty.splitlines()
-            line_map = build_line_map(pretty)
-            line_diags = {}
-            for d in checker.get_diags():
-                path = ctx_to_json_path(d.ctx.path)
-                if path not in line_map:
-                    continue
-                line = line_map[path] + 1
-                entry = {
-                    "severity": d.severity.name.lower(),
-                    "step": d.step,
-                    "msg": d.msg,
-                }
-                line_diags.setdefault(line, []).append(entry)
-            result["annotation"] = {
-                "lines": lines,
-                "line_diags": {str(k): v for k, v in line_diags.items()},
+            lines, line_diags, unmatched = \
+                get_annotated_display(checker.get_diags(), input_text)
+            result['annotation'] = {
+                'lines': lines,
+                'line_diags': {str(k): v for k, v in line_diags.items()},
             }
-        except Exception:
-            pass
+        except Exception as err:
+            result['ann_err'] = f'could not build annotations: {err}'
 
 except Exception as exc:
     result = {
-        "diags": [{
-            "severity": "catastrophic",
-            "step": "python",
-            "msg": str(exc),
-            "ctx": traceback.format_exc(),
+        'diags': [{
+            'severity': 'catastrophic',
+            'step': 'python',
+            'msg': str(exc),
+            'ctx': traceback.format_exc(),
         }]
     }
       `);
@@ -173,8 +159,9 @@ except Exception as exc:
         html += '<article class="diag ' + d.severity + '">';
         html += '<header>' + d.severity.toUpperCase() + '</header>';
         html += '<div class="diag-body">';
-        html += '<span class="step">[' + escapeHtml(d.step) + ']</span> ';
-        html += '<span class="ctx">' + escapeHtml(d.ctx) + '</span>';
+        if (d.step !== '')
+          html += '<span class="step">[' + escapeHtml(d.step) + ']</span> ';
+        html += 'in <span class="ctx">' + escapeHtml(d.ctx) + ':</span>';
         html += '<div class="msg">' + escapeHtml(d.msg) + '</div>';
         html += '</div></article>';
       }
@@ -182,16 +169,22 @@ except Exception as exc:
     }
 
     function renderSummary(summary) {
-      const items = [];
-      if (summary.catastrophic) items.push('<span class="summary-catastrophic">Catastrophic: ' + summary.catastrophic + '</span>');
-      if (summary.error) items.push('<span class="summary-error">Errors: ' + summary.error + '</span>');
-      if (summary.warning) items.push('<span class="summary-warning">Warnings: ' + summary.warning + '</span>');
-      if (summary.hint) items.push('<span class="summary-hint">Hints: ' + summary.hint + '</span>');
-      if (!items.length) items.push('<span class="summary-ok">All good</span>');
+      const items = ['<span>Messages:</span>'];
+      if (summary.catastrophic)
+        items.push('<span class="summary-catastrophic">Catastrophic: ' + summary.catastrophic + '</span>');
+      if (summary.error)
+        items.push('<span class="summary-error">Errors: ' + summary.error + '</span>');
+      if (summary.warning)
+        items.push('<span class="summary-warning">Warnings: ' + summary.warning + '</span>');
+      if (summary.hint)
+        items.push('<span class="summary-hint">Hints: ' + summary.hint + '</span>');
+      if (!items.length)
+        items.push('<span class="summary-ok">All good</span>');
       return '<div class="summary-bar">' + items.join('') + '</div>';
     }
 
     function renderAnnotated(result) {
+      // TODO ann_err
       const ann = result.annotation;
       const lines = ann.lines;
       const lineDiags = ann.line_diags;
