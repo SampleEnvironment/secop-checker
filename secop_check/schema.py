@@ -433,23 +433,23 @@ class Converter:
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
-            files=self._get(data, 'files', list),
+            files=self._get(data, 'files', list, []),
             systems=[self._resolve(System, x)
-                     for x in self._get(data, 'systems', list)],
+                     for x in self._get(data, 'systems', list, [])],
             interfaces=[self._resolve(Interface, x)
-                        for x in self._get(data, 'interfaces', list)],
+                        for x in self._get(data, 'interfaces', list, [])],
             features=[self._resolve(Feature, x)
-                      for x in self._get(data, 'features', list)],
+                      for x in self._get(data, 'features', list, [])],
             parameters=[self._resolve(Parameter, x)
-                        for x in self._get(data, 'parameters', list)],
+                        for x in self._get(data, 'parameters', list, [])],
             postfixes=[self._resolve(ParameterPostfix, x)
-                       for x in self._get(data, 'postfixes', list)],
+                       for x in self._get(data, 'postfixes', list, [])],
             commands=[self._resolve(Command, x)
-                      for x in self._get(data, 'commands', list)],
+                      for x in self._get(data, 'commands', list, [])],
             properties=self._mk_properties(
-                self._get(data, 'properties', dict)),
+                self._get(data, 'properties', dict, {})),
             datainfo=[self._resolve(Datainfo, x)
-                      for x in self._get(data, 'datainfo', list)],
+                      for x in self._get(data, 'datainfo', list, [])],
         )
         for system in repo.systems:
             self.inv.add_global(System, system.name)
@@ -477,15 +477,15 @@ class Converter:
     def _mk_properties(self, data: desc_dict) -> Properties:
         return Properties(
             node=[self._resolve(Property, x)
-                  for x in self._get(data, 'SECNode', list)],
+                  for x in self._get(data, 'SECNode', list, [])],
             system=[self._resolve(Property, x)
-                    for x in self._get(data, 'System', list)],
+                    for x in self._get(data, 'System', list, [])],
             module=[self._resolve(Property, x)
-                    for x in self._get(data, 'Module', list)],
+                    for x in self._get(data, 'Module', list, [])],
             parameter=[self._resolve(Property, x)
-                       for x in self._get(data, 'Parameter', list)],
+                       for x in self._get(data, 'Parameter', list, [])],
             command=[self._resolve(Property, x)
-                     for x in self._get(data, 'Command', list)],
+                     for x in self._get(data, 'Command', list, [])],
         )
 
     def _mk_system(self, data: desc_dict) -> System:
