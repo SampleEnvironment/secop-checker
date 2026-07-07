@@ -23,13 +23,16 @@
             </li>
           </ul>
         </nav>
-        <p>Entered data is not sent to any server, it is directly processed in the browser.</p>
         <textarea id="inputBox"
-                  placeholder="Paste your SECoP JSON description here!"
-                  rows="8" cols="33"></textarea>
+                  placeholder="Paste your SECoP JSON description here or drop a file!"
+                  rows="15" cols="33"
+                  ondragover="event.preventDefault()"
+                  ondrop="handleDrop(event)"></textarea>
+        <p class="explanation">Note: data is not sent to any server,
+          it is directly processed in the browser.</p>
         <div class="action-row">
           <button id="checkBtn" onclick="runCheck()" disabled>Check</button>
-          <label><input type="checkbox" id="annotateCb"> Annotate JSON</label>
+          <label><input type="checkbox" checked id="annotateCb"> Annotate JSON</label>
           <label>SECoP version:</label>
           <select id="versionSelect" class="version-select">
             <option value="1.0">1.0</option>
@@ -57,18 +60,27 @@
         statusText.textContent = 'Loading secop-check…';
         await micropip.install('./secop_check-0.1.0-py3-none-any.whl');
         statusText.textContent = 'Ready';
-        document.getElementById('spinner').hidden = true;
         document.getElementById('status').classList.add('ready');
         document.getElementById('checkBtn').disabled = false;
       } catch (e) {
         statusText.textContent = 'Failed: ' + e.message;
-        document.getElementById('spinner').hidden = true;
         document.getElementById('status').classList.add('failed');
         console.error(e);
       }
     }
 
     init();
+
+    function handleDrop(event) {
+      event.preventDefault();
+      const file = event.dataTransfer.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById('inputBox').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
 
     async function runCheck() {
       const text = document.getElementById('inputBox').value;
@@ -117,7 +129,7 @@ try:
         summary[d['severity']] += 1
     result = {'diags': diags, 'summary': summary}
 
-    if annotated_mode:
+    if summary['catastrophic'] == 0 and annotated_mode:
         lines, line_diags, unmatched = \
             get_annotated_display(checker.get_diags(), input_text)
         result['annotation'] = (
@@ -131,8 +143,8 @@ except Exception as exc:
         'diags': [{
             'severity': 'catastrophic',
             'step': 'python',
-            'msg': f'The checker encountered an internal error: {exc}',
-            'ctx': '',
+            'msg': f'The checker encountered an error: {exc}',
+            'ctx': 'internal code',
         }]
     }
       `);
@@ -158,7 +170,8 @@ except Exception as exc:
       html += '<div class="diag-body">';
       if (diag.step !== '')
         html += '<span class="step">[' + escapeHtml(diag.step) + ']</span> ';
-      html += 'in <span class="ctx">' + escapeHtml(diag.ctx) + ':</span>';
+      if (diag.ctx !== '')
+        html += 'in <span class="ctx">' + escapeHtml(diag.ctx) + ':</span>';
       html += '<div class="msg">' + escapeHtml(diag.msg) + '</div>';
       html += '</div></article>';
       return html;

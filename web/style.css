@@ -10,6 +10,10 @@
   --color-summary-hint: rgb(120, 120, 120);
 }
 
+.explanation {
+  color: var(--color-summary-hint);
+}
+
 .status-badge {
   display: flex;
   align-items: center;
@@ -78,6 +82,11 @@
 .summary-warning { color: var(--color-severity-warning); font-weight: bold; }
 .summary-hint { color: var(--color-summary-hint); }
 .summary-ok { color: var(--color-ok-text); font-weight: bold; }
+
+#inputBox {
+  font-family: monospace;
+  font-size: 0.85em;
+}
 
 .version-select {
   width: auto;
