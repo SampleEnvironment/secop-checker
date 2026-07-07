@@ -76,6 +76,8 @@ def ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> str:
             parts.append('argument')
         elif isinstance(item, ctx.Result):
             parts.append('result')
+        elif isinstance(item, ctx.System):
+            parts += ['systems', item.name]
         elif isinstance(item, ctx.Datainfo):
             parts.append('datainfo')
             if item.name:
@@ -115,7 +117,7 @@ class Checker(DiagnosticBase):
                 f'invalid json at line {e.lineno} column {e.colno}:\n{e.msg}') \
                 from None
 
-        schemata = desc_obj.get('schemata', {})
+        schemata = desc_obj.get('schemata', [])
         for uri in schemata:
             self.loader.load_repo(uri)
 

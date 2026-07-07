@@ -1,5 +1,10 @@
 - test with custom interface classes
 - mode for hinting at possible other properties?
-- loading schema from github
-- loading schema from other urls
+- loading schema from github OR built-in
+- loading schema from other urls -> hook for JS mode!
 - link to spec for errors
+- annotated: keep non-anchored diags somewhere
+- upload field -> drag/drop
+- show description in diagnostics?
+- diag name instead of visitor name?
+- json: subtrees einklappen? -> floats statt tabelle
