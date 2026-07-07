@@ -132,14 +132,16 @@ class Checker(DiagnosticBase):
         elif isinstance(dataty, DatatyArray) \
                 and isinstance(dataty.itemtype, DatatyDatainfo):
             items = cast('list', actual)
-            for item in items:
-                self.check_datainfo(cast('dict', item))
+            for i, item in enumerate(items):
+                with self.with_context(ctx.Index(i)):
+                    self.check_datainfo(cast('dict', item))
         elif isinstance(dataty, DatatyTuple) and dataty.itemtypes:
             items = cast('list', actual)
-            for itemtype, item in zip(dataty.itemtypes, items,
-                                      strict=False):
+            for i, (itemtype, item) in enumerate(zip(dataty.itemtypes, items,
+                                                     strict=False)):
                 if isinstance(itemtype, DatatyDatainfo):
-                    self.check_datainfo(cast('dict', item))
+                    with self.with_context(ctx.Index(i)):
+                        self.check_datainfo(cast('dict', item))
         elif isinstance(dataty, DatatyStruct):
             actual_dict = cast('dict', actual)
             if dataty.fieldtype is not None \
@@ -155,7 +157,8 @@ class Checker(DiagnosticBase):
                 for key, fieldtype in dataty.fieldtypes.items():
                     if isinstance(fieldtype, DatatyDatainfo) \
                             and key in actual_dict:
-                        self.check_datainfo(cast('dict', actual_dict[key]))
+                        with self.with_context(ctx.Item(key)):
+                            self.check_datainfo(cast('dict', actual_dict[key]))
 
     def check_datainfo(self, description: desc_dict) -> None:
         """Check validity of a datainfo description."""

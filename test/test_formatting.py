@@ -30,7 +30,7 @@ from typing import cast
 
 from secop_check import context as ctx
 from secop_check.formatting import _build_line_map as build_line_map
-from secop_check.formatting import _ctx_to_json_path as ctx_to_json_path
+from secop_check.formatting import _ctx_to_json_path
 
 
 def test_build_line_map_empty():
@@ -39,74 +39,87 @@ def test_build_line_map_empty():
 
 def test_build_line_map_simple():
     text = '{\n  "a": 1\n}'
-    assert build_line_map(text) == {'a': 1}
+    assert build_line_map(text) == {('a',): 1}
 
 
 def test_build_line_map_nested():
     text = json.dumps({'a': {'b': 1, 'c': 2}}, indent=2)
-    assert build_line_map(text) == {'a': 1, 'a.b': 2, 'a.c': 3}
+    assert build_line_map(text) == {('a',): 1, ('a', 'b'): 2, ('a', 'c'): 3}
 
 
-def test_build_line_map_non_matching():
-    text = '[\n  1,\n  2\n]'
-    assert build_line_map(text) == {}
+def test_build_line_map_with_array():
+    text = json.dumps({'items': [1, 2, 3]}, indent=2)
+    assert build_line_map(text) == {('items',): 1, ('items', '0'): 2,
+                                    ('items', '1'): 3, ('items', '2'): 4}
+
+
+def test_build_line_map_array_of_objects():
+    text = json.dumps({'items': [{'name': 'a'}, {'name': 'b'}]}, indent=2)
+    assert build_line_map(text) == {('items',): 1, ('items', '0'): 2,
+                                    ('items', '0', 'name'): 3,
+                                    ('items', '1'): 5,
+                                    ('items', '1', 'name'): 6}
+
+
+def joined_ctx(p: list) -> str:
+    return '.'.join(_ctx_to_json_path(p))
 
 
 def test_ctx_to_json_path_empty():
-    assert ctx_to_json_path([]) == ''
+    assert joined_ctx([]) == ''
 
 
 def test_ctx_to_json_path_module():
-    assert ctx_to_json_path([ctx.Module('m1')]) == 'modules.m1'
+    assert joined_ctx([ctx.Module('m1')]) == 'modules.m1'
 
 
 def test_ctx_to_json_path_param():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('value')])
-    assert ctx_to_json_path(path) == 'modules.m1.accessibles.value'
+    assert joined_ctx(path) == 'modules.m1.accessibles.value'
 
 
 def test_ctx_to_json_path_command():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Command('reset')])
-    assert ctx_to_json_path(path) == 'modules.m1.accessibles.reset'
+    assert joined_ctx(path) == 'modules.m1.accessibles.reset'
 
 
 def test_ctx_to_json_path_property():
-    assert ctx_to_json_path([ctx.Property('visibility')]) == 'visibility'
+    assert joined_ctx([ctx.Property('visibility')]) == 'visibility'
 
 
 def test_ctx_to_json_path_datainfo():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('v'),
-                 ctx.Datainfo('struct', '')])
-    assert ctx_to_json_path(path) == 'modules.m1.accessibles.v.datainfo'
+                 ctx.Datainfo('struct', 'blah')])
+    assert joined_ctx(path) == 'modules.m1.accessibles.v.blah'
 
 
 def test_ctx_to_json_path_datainfo_named():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('v'),
                  ctx.Datainfo('struct', 'field_x')])
-    assert ctx_to_json_path(path) == \
-        'modules.m1.accessibles.v.datainfo.field_x'
+    assert joined_ctx(path) == \
+        'modules.m1.accessibles.v.field_x'
 
 
 def test_ctx_to_json_path_constant():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Parameter('v'),
                  ctx.ConstantValue('')])
-    assert ctx_to_json_path(path) == 'modules.m1.accessibles.v.constant'
+    assert joined_ctx(path) == 'modules.m1.accessibles.v.constant'
 
 
 def test_ctx_to_json_path_argument():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Command('cmd'),
                  ctx.Argument('')])
-    assert ctx_to_json_path(path) == 'modules.m1.accessibles.cmd.argument'
+    assert joined_ctx(path) == 'modules.m1.accessibles.cmd.argument'
 
 
 def test_ctx_to_json_path_result():
     path = cast('list[ctx.ContextItem]',
                 [ctx.Module('m1'), ctx.Command('cmd'),
                  ctx.Result('')])
-    assert ctx_to_json_path(path) == 'modules.m1.accessibles.cmd.result'
+    assert joined_ctx(path) == 'modules.m1.accessibles.cmd.result'

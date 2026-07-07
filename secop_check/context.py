@@ -96,3 +96,17 @@ class Generic(ContextItem):
 
     def __str__(self) -> str:
         return f'{self.kind} {self.name}'
+
+
+class Item(ContextItem):
+    def __str__(self) -> str:
+        return f'Item {self.name}'
+
+
+class Index(ContextItem):
+    def __init__(self, index: int) -> None:
+        super().__init__(str(index))
+        self.index = index
+
+    def __str__(self) -> str:
+        return f'Item {self.name}'

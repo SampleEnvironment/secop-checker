@@ -27,12 +27,7 @@ import re
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from . import Severity
-from .context import Command as CtxCommand
-from .context import ConstantValue
-from .context import Module as CtxModule
-from .context import Parameter as CtxParameter
-from .context import Property as CtxProperty
-from .context import System as CtxSystem
+from . import context as ctx
 from .dataty import Dataty
 from .schema import (
     Command,
@@ -222,7 +217,7 @@ class SystemChecker(BaseVisitor):
     specified in the system definition.
     """
 
-    name = 'system'
+    name = 'systems'
 
     def visit_secnode(self, description: desc_dict) -> None:
         systems = description.get('systems', {})
@@ -237,7 +232,7 @@ class SystemChecker(BaseVisitor):
                      for prop in self.inv.get_global_props(System)}
 
         for sysname, sysdesc in systems.items():
-            with self.checker.with_context(CtxSystem(sysname)):
+            with self.checker.with_context(ctx.System(sysname)):
                 self._check_one(sysname, sysdesc, module_names,
                                 modules_desc, sys_props)
 
@@ -323,7 +318,7 @@ class SystemChecker(BaseVisitor):
             if not isinstance(actual_modname, str) or \
                actual_modname not in module_names:
                 continue
-            with self.checker.with_context(CtxModule(modname)):
+            with self.checker.with_context(ctx.Module(modname)):
                 self._check_module_spec(iface, actual_modname, modules_desc)
 
         # check system-level properties (description, system ref, etc.)
@@ -387,21 +382,21 @@ class SystemChecker(BaseVisitor):
         if self._has_raw_specs(spec.parameters):
             for pspec in cast('list[dict[str, dict]]', spec.parameters):
                 for pname, pprops in pspec.items():
-                    with self.checker.with_context(CtxParameter(pname)):
+                    with self.checker.with_context(ctx.Parameter(pname)):
                         self._check_param_spec(pname, pprops, accessibles)
 
         # 3. command specs
         if self._has_raw_specs(spec.commands):
             for cspec in cast('list[dict[str, dict]]', spec.commands):
                 for cname, cprops in cspec.items():
-                    with self.checker.with_context(CtxCommand(cname)):
+                    with self.checker.with_context(ctx.Command(cname)):
                         self._check_cmd_spec(cname, cprops, accessibles)
 
         # 4. module-level property specs
         if self._has_raw_specs(spec.properties):
             for mpspec in cast('list[dict[str, dict]]', spec.properties):
                 for pname, pprops in mpspec.items():
-                    with self.checker.with_context(CtxProperty(pname)):
+                    with self.checker.with_context(ctx.Property(pname)):
                         self._check_mod_prop_spec(pname, pprops, actual)
 
     def _check_interface_class(self, spec: Interface, actual: dict) -> None:
@@ -545,7 +540,7 @@ class SystemChecker(BaseVisitor):
             if member == 'modules':
                 continue
             required.discard(member)
-            with self.checker.with_context(CtxProperty(member)):
+            with self.checker.with_context(ctx.Property(member)):
                 if member not in sys_props:
                     if not member.startswith('_'):
                         self.checker.emit(
@@ -583,7 +578,7 @@ class BasePropsChecker(BaseVisitor):
             if member in skip_set:
                 continue
             required.discard(member)
-            with self.checker.with_context(CtxProperty(member)):
+            with self.checker.with_context(ctx.Property(member)):
                 if member not in props:
                     if not member.startswith('_'):
                         self.checker.emit(
@@ -770,7 +765,7 @@ class AccessibleChecker(BaseVisitor):
             if not description.get('readonly'):
                 self.checker.emit(Severity.WARNING,
                                   'constant parameters should be readonly')
-            with self.checker.with_context(ConstantValue()):
+            with self.checker.with_context(ctx.ConstantValue()):
                 try:
                     ty = Dataty.from_desc(description['datainfo'])
                 except ValueError:

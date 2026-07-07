@@ -89,6 +89,7 @@ def main() -> None:
         diag = Diagnostic(
             Severity.CATASTROPHIC, '',
             Context(path=[], traceback=traceback.format_exc()),
-            f'The checker encountered an error: {e}',
+            f'The checker encountered an internal error: {e}',
         )
-        DiagnosticBase(output)._print(diag)  # noqa: SLF001
+        diag_out = 'json' if output == 'json' else 'text'
+        DiagnosticBase(diag_out)._print(diag)  # noqa: SLF001

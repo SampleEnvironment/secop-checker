@@ -69,45 +69,55 @@ def print_diag_panel(diag: Diagnostic, console: Console) -> None:
     ))
 
 
-def _build_line_map(text: str) -> dict[str, int]:
+def _build_line_map(text: str) -> dict[tuple[str, ...], int]:
     lines = text.splitlines()
     path: list[str] = []
-    line_map: dict[str, int] = {}
+    stack: list[str] = []
+    line_map: dict[tuple[str, ...], int] = {}
     for i, line in enumerate(lines):
         m = re.match(r'^(\s*)"([^"]+)":', line)
-        if not m:
-            continue
-        key = m.group(2)
-        depth = len(m.group(1)) // 2
-        while len(path) >= depth:
+        if m:
+            key = m.group(2)
+            path[-1] = key
+            line_map[tuple(path)] = i
+        if line.endswith('['):
+            stack.append('l')
+            path.append('0')
+            line_map[tuple(path)] = i + 1
+        elif line.endswith('{'):
+            stack.append('d')
+            path.append('')
+        if line.endswith(('[]', '[],', '{}', '{},')):
+            pass
+        elif line.endswith((']', '],', '}', '},')):
+            stack.pop()
             path.pop()
-        path.append(key)
-        line_map['.'.join(path)] = i
+        if line.endswith(',') and stack[-1] == 'l':
+            path[-1] = str(int(path[-1]) + 1)
+            line_map[tuple(path)] = i + 1
     return line_map
 
 
-def _ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> str:
+def _ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> tuple[str, ...]:
     parts: list[str] = []
     for item in ctxpath:
         if isinstance(item, ctx.Module):
             parts += ['modules', item.name]
-        elif isinstance(item, ctx.Property):
-            parts.append(item.name)
+        elif isinstance(item, ctx.System):
+            parts += ['systems', item.name]
         elif isinstance(item, (ctx.Parameter, ctx.Command)):
             parts += ['accessibles', item.name]
+        elif isinstance(item, (ctx.Property, ctx.Index, ctx.Item)):
+            parts.append(item.name)
         elif isinstance(item, ctx.ConstantValue):
             parts.append('constant')
         elif isinstance(item, ctx.Argument):
             parts.append('argument')
         elif isinstance(item, ctx.Result):
             parts.append('result')
-        elif isinstance(item, ctx.System):
-            parts += ['systems', item.name]
-        elif isinstance(item, ctx.Datainfo):
-            parts.append('datainfo')
-            if item.name:
-                parts.append(item.name)
-    return '.'.join(parts)
+        elif isinstance(item, ctx.Datainfo) and item.name:
+            parts.append(item.name)
+    return tuple(parts)
 
 
 def get_annotated_display(diags: list[Diagnostic], raw_json: str) -> \
@@ -122,7 +132,9 @@ def get_annotated_display(diags: list[Diagnostic], raw_json: str) -> \
     unmatched = []
     for d in diags:
         path = _ctx_to_json_path(d.ctx.path)
-        if path not in line_map:
+        while path and path not in line_map:
+            path = path[:-1]
+        if not path:
             unmatched.append(d)
             continue
         line = line_map[path]

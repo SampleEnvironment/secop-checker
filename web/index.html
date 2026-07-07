@@ -96,6 +96,14 @@ from secop_check.checker import Checker
 from secop_check.formatting import get_annotated_display
 from secop_check import Catastrophe, Severity
 
+def diag_to_obj(d):
+    return {
+        'severity': d.severity.name.lower(),
+        'step': d.step,
+        'msg': d.msg,
+        'ctx': ' / '.join(str(p) for p in d.ctx.path).strip(),
+    }
+
 try:
     checker = Checker(check_version, [], output="none")
     try:
@@ -103,68 +111,56 @@ try:
     except Catastrophe:
         pass
 
-    diags = []
-    for d in checker.get_diags():
-        diags.append({
-            'severity': d.severity.name.lower(),
-            'step': d.step,
-            'msg': d.msg,
-            'ctx': ' / '.join(str(p) for p in d.ctx.path).strip(),
-        })
-
+    diags = [diag_to_obj(d) for d in checker.get_diags()]
     summary = {'hint': 0, 'warning': 0, 'error': 0, 'catastrophic': 0}
     for d in diags:
         summary[d['severity']] += 1
     result = {'diags': diags, 'summary': summary}
 
     if annotated_mode:
-        try:
-            lines, line_diags, unmatched = \
-                get_annotated_display(checker.get_diags(), input_text)
-            result['annotation'] = {
-                'lines': lines,
-                'line_diags': {str(k): v for k, v in line_diags.items()},
-            }
-        except Exception as err:
-            result['ann_err'] = f'could not build annotations: {err}'
+        lines, line_diags, unmatched = \
+            get_annotated_display(checker.get_diags(), input_text)
+        result['annotation'] = (
+            lines,
+            {str(l): [diag_to_obj(d) for d in v] for l, v in line_diags.items()},
+            [diag_to_obj(d) for d in unmatched]
+        )
 
 except Exception as exc:
     result = {
         'diags': [{
             'severity': 'catastrophic',
             'step': 'python',
-            'msg': str(exc),
-            'ctx': traceback.format_exc(),
+            'msg': f'The checker encountered an internal error: {exc}',
+            'ctx': '',
         }]
     }
       `);
 
       const result = pyodide.globals.get('result').toJs();
+      console.log(result);
 
       const summaryHtml = renderSummary(result.summary || {});
-      let listHtml;
+      let listHtml = '';
       if (result.diags.length === 0) {
-        listHtml = '';
       } else if (result.annotation) {
         listHtml = renderAnnotated(result);
       } else {
-        listHtml = renderPanels(result.diags);
+        for (const d of result.diags) listHtml += renderPanel(d);
       }
       results.innerHTML = summaryHtml + listHtml;
     }
 
-    function renderPanels(diags) {
+    function renderPanel(diag) {
       let html = '';
-      for (const d of diags) {
-        html += '<article class="diag ' + d.severity + '">';
-        html += '<header>' + d.severity.toUpperCase() + '</header>';
-        html += '<div class="diag-body">';
-        if (d.step !== '')
-          html += '<span class="step">[' + escapeHtml(d.step) + ']</span> ';
-        html += 'in <span class="ctx">' + escapeHtml(d.ctx) + ':</span>';
-        html += '<div class="msg">' + escapeHtml(d.msg) + '</div>';
-        html += '</div></article>';
-      }
+      html += '<article class="diag ' + diag.severity + '">';
+      html += '<header>' + diag.severity.toUpperCase() + '</header>';
+      html += '<div class="diag-body">';
+      if (diag.step !== '')
+        html += '<span class="step">[' + escapeHtml(diag.step) + ']</span> ';
+      html += 'in <span class="ctx">' + escapeHtml(diag.ctx) + ':</span>';
+      html += '<div class="msg">' + escapeHtml(diag.msg) + '</div>';
+      html += '</div></article>';
       return html;
     }
 
@@ -184,11 +180,11 @@ except Exception as exc:
     }
 
     function renderAnnotated(result) {
-      // TODO ann_err
-      const ann = result.annotation;
-      const lines = ann.lines;
-      const lineDiags = ann.line_diags;
-      let html = '<table class="annotated">';
+      const [lines, lineDiags, unmatched] = result.annotation;
+      let html = '';
+      for (const d of unmatched)
+        html += renderPanel(d);
+      html += '<table class="annotated">';
       for (let i = 0; i < lines.length; i++) {
         const diags = lineDiags[i + 1] || [];
         const rowClass = diags.length ? 'has-diag' : '';
@@ -199,6 +195,7 @@ except Exception as exc:
           html += '<span class="ann-badge ' + d.severity + '">' + d.severity.toUpperCase() + '</span>';
           html += ' <span class="ann-step">[' + escapeHtml(d.step) + ']</span>';
           html += ': ' + escapeHtml(d.msg);
+          html += '<br>';
         }
         html += '</td>';
         html += '</tr>';

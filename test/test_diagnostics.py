@@ -32,8 +32,8 @@ import pytest
 
 from secop_check import Catastrophe, Severity
 from secop_check import Diagnostic as Diag
+from secop_check import context as ctx
 from secop_check.checker import Checker, desc_dict
-from secop_check.context import SECNode as CtxSECNode
 
 ERROR = Severity.ERROR
 WARNING = Severity.WARNING
@@ -140,11 +140,11 @@ def assert_has(diags: list[Diag],
     Each element is (severity, msg, ctx).
     """
     unmatched = list(diags)
-    for sev, msg, ctx in expected:
+    for sev, msg, uctx in expected:
         for i, d in enumerate(unmatched):
-            d_path = [p for p in d.ctx.path if not isinstance(p, CtxSECNode)]
+            d_path = [p for p in d.ctx.path if not isinstance(p, ctx.SECNode)]
             d_ctx = ':'.join(str(p) for p in d_path).strip()
-            if d.severity is sev and msg in d.msg and ctx == d_ctx:
+            if d.severity is sev and msg in d.msg and uctx == d_ctx:
                 unmatched.pop(i)
                 break
         else:
@@ -356,7 +356,7 @@ class TestDatainfoStructure:
                    (ERROR, "expected struct with str names and values of "
                     "type: integer, got {'BAD': 'not_int'}",
                     'Module m:Parameter _x:Property datainfo'
-                    ':datainfo tuple members:datainfo enum members'))
+                    ':datainfo tuple members:Item 1:datainfo enum members'))
 
     def test_bad_enum_in_struct_members(self):
         """Struct(fieldtype=Datainfo): nested datainfo inside struct is validated."""
@@ -396,7 +396,7 @@ class TestDatainfoStructure:
                    (ERROR, "expected struct with str names and values of "
                     "type: integer, got {'BAD': 'not_int'}",
                     'Module m:Parameter _x:Property datainfo'
-                    ':datainfo test_tuple_di items:datainfo enum members'))
+                    ':datainfo test_tuple_di items:Item 0:datainfo enum members'))
 
     def test_bad_enum_in_named_struct_dataprop(self):
         """Struct(fieldtypes=...): validates nested datainfo in named struct."""
@@ -416,7 +416,7 @@ class TestDatainfoStructure:
                    (ERROR, "expected struct with str names and values of "
                     "type: integer, got {'a': 'bad'}",
                     'Module m:Parameter _x:Property datainfo'
-                    ':datainfo test_struct_di items:datainfo enum members'))
+                    ':datainfo test_struct_di items:Item field1:datainfo enum members'))
 
 
 class TestDatainfoTemplate:
