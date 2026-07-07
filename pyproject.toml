@@ -15,6 +15,7 @@ readme = "README.rst"
 requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=5.4",
+    "requests>=1.0",
     "rich>=14.0",
 ]
 

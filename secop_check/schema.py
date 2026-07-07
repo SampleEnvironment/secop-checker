@@ -25,10 +25,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 from urllib.parse import urlparse, urlunparse
-from urllib.request import urlopen
 
 if TYPE_CHECKING:
     # keep 3.9 compatibility (after that, from types import EllipsisType)
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         Ellipsis = ...
     Ellipsis = EllipsisType.Ellipsis  # noqa: A001
 
+import requests
 import yaml
 
 from . import DiagnosticBase, Severity
@@ -44,6 +45,13 @@ from .context import File, Generic
 from .dataty import Dataty
 
 COMMON_META = {'kind', 'name', 'version', 'description'}
+
+
+def requests_open(uri: str) -> StringIO:
+    """Open a URI using requests and return a file-like object."""
+    resp = requests.get(uri, timeout=5)
+    resp.raise_for_status()
+    return StringIO(resp.text)
 
 
 @dataclass
@@ -223,7 +231,7 @@ class Loader(DiagnosticBase):
 
     def _load_one(self, uri: str, raw_objects: dict) -> None:
         try:
-            openfunc = urlopen if '://' in uri else open
+            openfunc = requests_open if '://' in uri else open
             with openfunc(uri) as f:
                 data = list(yaml.safe_load_all(f))
         except Exception as err:  # noqa: BLE001
