@@ -4,4 +4,3 @@
 - link to spec for errors
 - show description in diagnostics?
 - diag name instead of visitor name?
-- json: subtrees einklappen? -> floats statt tabelle

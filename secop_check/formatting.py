@@ -69,12 +69,25 @@ def print_diag_panel(diag: Diagnostic, console: Console) -> None:
     ))
 
 
-def _build_line_map(text: str) -> dict[tuple[str, ...], int]:
+def _build_line_map(
+    text: str,
+) -> tuple[dict[tuple[str, ...], int], list[tuple[int, int]]]:
     lines = text.splitlines()
     path: list[str] = []
     stack: list[str] = []
     line_map: dict[tuple[str, ...], int] = {}
+    last_on_indent = {}
+    ranges = []
+    prev_indent = 0
     for i, line in enumerate(lines):
+        indent = (len(line) - len(line.lstrip())) // 2
+        if indent > prev_indent:
+            last_on_indent[prev_indent] = i - 1
+        elif indent < prev_indent:
+            first_line = last_on_indent[indent]
+            last_line = i - 1
+            ranges.append((first_line, last_line))
+
         m = re.match(r'^(\s*)"([^"]+)":', line)
         if m:
             key = m.group(2)
@@ -95,7 +108,10 @@ def _build_line_map(text: str) -> dict[tuple[str, ...], int]:
         if line.endswith(',') and stack[-1] == 'l':
             path[-1] = str(int(path[-1]) + 1)
             line_map[tuple(path)] = i + 1
-    return line_map
+
+        prev_indent = indent
+
+    return line_map, ranges
 
 
 def _ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> tuple[str, ...]:
@@ -121,10 +137,10 @@ def _ctx_to_json_path(ctxpath: list[ctx.ContextItem]) -> tuple[str, ...]:
 
 
 def get_annotated_display(diags: list[Diagnostic], raw_json: str) -> \
-        tuple[list[str], dict[int, list], list]:
+        tuple[list[str], dict[int, list], list, list[tuple[int, int]]]:
     obj = json.loads(raw_json)
     text = json.dumps(obj, indent=2)
-    line_map = _build_line_map(text)
+    line_map, ranges = _build_line_map(text)
     lines = text.splitlines()
 
     # Group diagnostics by JSON-path → line
@@ -140,7 +156,7 @@ def get_annotated_display(diags: list[Diagnostic], raw_json: str) -> \
         line = line_map[path]
         line_diags.setdefault(line + 1, []).append(d)
 
-    return lines, line_diags, unmatched
+    return lines, line_diags, unmatched, ranges
 
 
 def render_summary(diags: list[Diagnostic], console: Console) -> None:
@@ -175,7 +191,7 @@ def render_summary(diags: list[Diagnostic], console: Console) -> None:
 
 
 def render_annotated(diags: list[Diagnostic], raw_json: str) -> None:
-    lines, line_diags, unmatched = get_annotated_display(diags, raw_json)
+    lines, line_diags, unmatched, _ranges = get_annotated_display(diags, raw_json)
     num_width = len(str(len(lines))) + 3
     highlighter = JSONHighlighter()
     console = Console(theme=Theme({'json.key': 'blue'}))

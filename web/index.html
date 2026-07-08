@@ -71,6 +71,7 @@
 
     init();
 
+    // Support dropping files onto the textarea to read their contents.
     function handleDrop(event) {
       event.preventDefault();
       const file = event.dataTransfer.files[0];
@@ -86,6 +87,7 @@
       const text = document.getElementById('inputBox').value;
       const results = document.getElementById('results');
       const annotated = document.getElementById('annotateCb').checked;
+      const version = document.getElementById('versionSelect').value;
 
       if (!text.trim()) {
         results.innerHTML = '<article class="diag hint">Please enter a SECoP description.</article>';
@@ -94,9 +96,9 @@
 
       results.innerHTML = '<div class="check-spinner-wrapper"><div class="spinner spinner-large"></div></div>';
 
+      // Give some time to update the spinner.
       await new Promise(r => setTimeout(r, 20));
 
-      const version = document.getElementById('versionSelect').value;
       pyodide.globals.set('input_text', text);
       pyodide.globals.set('check_version', version);
       pyodide.globals.set('annotated_mode', annotated);
@@ -130,12 +132,13 @@ try:
     result = {'diags': diags, 'summary': summary}
 
     if summary['catastrophic'] == 0 and annotated_mode:
-        lines, line_diags, unmatched = \
+        lines, line_diags, unmatched, ranges = \
             get_annotated_display(checker.get_diags(), input_text)
         result['annotation'] = (
             lines,
             {str(l): [diag_to_obj(d) for d in v] for l, v in line_diags.items()},
-            [diag_to_obj(d) for d in unmatched]
+            [diag_to_obj(d) for d in unmatched],
+            ranges,
         )
 
 except Exception as exc:
@@ -193,28 +196,66 @@ except Exception as exc:
     }
 
     function renderAnnotated(result) {
-      const [lines, lineDiags, unmatched] = result.annotation;
+      const [lines, lineDiags, unmatched, ranges] = result.annotation;
+
+      const rangeStarts = new Set(ranges.map(r => r[0]));
+      const rangeEnds = new Set(ranges.map(r => r[1] + 1));
+
+      const hasDiag = new Set();
+      for (const [s, e] of ranges) {
+        for (let line = s; line <= e; line++) {
+          if (lineDiags[line + 1]) { hasDiag.add(s); break; }
+        }
+      }
+
+      const closeBracket = {};
+      for (const [s, e] of ranges) {
+        const m = lines[e + 1].match(/[\]}]/);
+        if (m) closeBracket[s] = m[0];
+      }
+
       let html = '';
-      for (const d of unmatched)
-        html += renderPanel(d);
-      html += '<table class="annotated">';
+      for (const d of unmatched) html += renderPanel(d);
+      html += '<div class="json-tree">';
+
       for (let i = 0; i < lines.length; i++) {
         const diags = lineDiags[i + 1] || [];
-        const rowClass = diags.length ? 'has-diag' : '';
-        html += '<tr class="' + rowClass + '">';
-        html += '<td class="json-line">' + highlightJson(lines[i]) + '</td>';
-        html += '<td class="diag-cell">';
-        for (const d of diags) {
-          html += '<span class="ann-badge ' + d.severity + '">' + d.severity.toUpperCase() + '</span>';
-          html += ' <span class="ann-step">[' + escapeHtml(d.step) + ']</span>';
-          html += ': ' + escapeHtml(d.msg);
-          html += '<br>';
+        const sev = diags.length ? 'has-diag ' + highestSeverity(diags) : '';
+
+        if (rangeEnds.has(i)) {
+          html += '<div class="tree-row">';
+          html += '<span class="tree-no-toggle">&nbsp;</span>';
+          html += '<span class="tree-json">' + highlightJson(lines[i]) + '</span>';
+          html += '</div></div>'; // close tree-row and tree-node
+        } else if (rangeStarts.has(i)) {
+          const collapsed = !hasDiag.has(i);
+          const cb = closeBracket[i];
+          const closeClass = cb === '}' ? ' close-brace' : cb === ']' ? ' close-bracket' : '';
+          html += '<div class="tree-node' + (collapsed ? ' collapsed' : '') + closeClass + '">';
+          html += '<div class="tree-row' + (sev ? ' ' + sev : '') + '">';
+          html += '<span class="tree-toggle" onclick="toggleTree(this)"></span>';
+          html += '<span class="tree-json">' + highlightJson(lines[i]) + '</span>';
+          if (diags.length) html += renderDiagsInline(diags);
+          html += '</div>';
+        } else {
+          html += '<div class="tree-row' + (sev ? ' ' + sev : '') + '">';
+          html += '<span class="tree-no-toggle">&nbsp;</span>';
+          html += '<span class="tree-json">' + highlightJson(lines[i]) + '</span>';
+          if (diags.length) html += renderDiagsInline(diags);
+          html += '</div>';
         }
-        html += '</td>';
-        html += '</tr>';
       }
-      html += '</table>';
+
+      html += '</div>';
       return html;
+    }
+
+    const _sevOrder = {catastrophic: 4, error: 3, warning: 2, hint: 1};
+    function highestSeverity(diags) {
+      let best = 'hint';
+      for (const d of diags)
+        if (_sevOrder[d.severity] > _sevOrder[best]) best = d.severity;
+      return best;
     }
 
     function highlightJson(line) {
@@ -226,6 +267,22 @@ except Exception as exc:
         if (num) return '<span class="j-num">' + escapeHtml(num) + '</span>';
         return escapeHtml(match);
       });
+    }
+
+    function renderDiagsInline(diags) {
+      let html = '<span class="tree-diags">';
+      for (const d of diags) {
+        html += '<span class="ann-badge ' + d.severity + '">' + d.severity.toUpperCase() + '</span>';
+        if (d.step) html += ' <span class="ann-step">[' + escapeHtml(d.step) + ']</span>';
+        html += ': ' + escapeHtml(d.msg);
+        html += '<br>';
+      }
+      html += '</span>';
+      return html;
+    }
+
+    function toggleTree(el) {
+      el.parentElement.parentElement.classList.toggle('collapsed');
     }
 
     function escapeHtml(s) {

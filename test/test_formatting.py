@@ -34,31 +34,41 @@ from secop_check.formatting import _ctx_to_json_path
 
 
 def test_build_line_map_empty():
-    assert build_line_map('') == {}
+    lm, r = build_line_map('')
+    assert lm == {}
+    assert r == []
 
 
 def test_build_line_map_simple():
     text = '{\n  "a": 1\n}'
-    assert build_line_map(text) == {('a',): 1}
+    lm, r = build_line_map(text)
+    assert lm == {('a',): 1}
+    assert r == [(0, 1)]
 
 
 def test_build_line_map_nested():
     text = json.dumps({'a': {'b': 1, 'c': 2}}, indent=2)
-    assert build_line_map(text) == {('a',): 1, ('a', 'b'): 2, ('a', 'c'): 3}
+    lm, r = build_line_map(text)
+    assert lm == {('a',): 1, ('a', 'b'): 2, ('a', 'c'): 3}
+    assert r == [(1, 3), (0, 4)]
 
 
 def test_build_line_map_with_array():
     text = json.dumps({'items': [1, 2, 3]}, indent=2)
-    assert build_line_map(text) == {('items',): 1, ('items', '0'): 2,
-                                    ('items', '1'): 3, ('items', '2'): 4}
+    lm, r = build_line_map(text)
+    assert lm == {('items',): 1, ('items', '0'): 2,
+                  ('items', '1'): 3, ('items', '2'): 4}
+    assert r == [(1, 4), (0, 5)]
 
 
 def test_build_line_map_array_of_objects():
     text = json.dumps({'items': [{'name': 'a'}, {'name': 'b'}]}, indent=2)
-    assert build_line_map(text) == {('items',): 1, ('items', '0'): 2,
-                                    ('items', '0', 'name'): 3,
-                                    ('items', '1'): 5,
-                                    ('items', '1', 'name'): 6}
+    lm, r = build_line_map(text)
+    assert lm == {('items',): 1, ('items', '0'): 2,
+                  ('items', '0', 'name'): 3,
+                  ('items', '1'): 5,
+                  ('items', '1', 'name'): 6}
+    assert r == [(2, 3), (5, 6), (1, 7), (0, 8)]
 
 
 def joined_ctx(p: list) -> str:
