@@ -33,6 +33,7 @@ from urllib.parse import urlparse, urlunparse
 if TYPE_CHECKING:
     # keep 3.9 compatibility (after that, from types import EllipsisType)
     import enum
+    from importlib.abc import Traversable
     class EllipsisType(enum.Enum):
         Ellipsis = ...
     Ellipsis = EllipsisType.Ellipsis  # noqa: A001
@@ -224,7 +225,7 @@ class Inventory:
 
 
 class Loader(DiagnosticBase):
-    def __init__(self, root: Path, output: str) -> None:
+    def __init__(self, root: Traversable | Path, output: str) -> None:
         super().__init__(output)
         self._inv = Inventory()
         self._root = root
@@ -286,7 +287,7 @@ class Loader(DiagnosticBase):
         return cast('Repository', Converter(self, raw_objects).convert(repo))
 
     def load(self, version: str, additional: list[str]) -> None:
-        ver_root = self._root / f'version-{version}.yaml'
+        ver_root = self._root.joinpath(f'version-{version}.yaml')
         if not ver_root.is_file():
             raise self.emit_catastrophic(
                 f'no root yaml found for version {version}')

@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from importlib import resources
 from typing import TYPE_CHECKING, Any, cast
 
 from . import DiagnosticBase, Severity
@@ -47,7 +47,7 @@ class Checker(DiagnosticBase):
     def __init__(self, version: str, additional: list[str], output: str) -> None:
         super().__init__(output)
 
-        self.loader = Loader(Path(__file__).parent / 'defs', output)
+        self.loader = Loader(resources.files('secop_check.defs'), output)
         self.loader.set_diags(self._diags)
         self.loader.load(version, additional)
 
