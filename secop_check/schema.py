@@ -237,7 +237,7 @@ class Loader(DiagnosticBase):
                 data = list(yaml.safe_load_all(f))
         except Exception as err:  # noqa: BLE001
             raise self.emit_catastrophic(
-                f'could not load yaml from {uri}: {err}') from None
+                f'could not load repository YAML from {uri}: {err}') from None
 
         with self.with_context(File(uri)):
             for spec in data:
