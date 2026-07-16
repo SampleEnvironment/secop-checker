@@ -1,0 +1,23 @@
+---
+kind: Repository
+name: "TempSystems"
+version: 1
+description: "Test fixtures for temperature-related system checking"
+files:
+  - temperature_environment.yaml
+  - lhe_cryostat.yaml
+systems:
+  - TemperatureEnvironment:0
+  - LiquidHeliumCryostat:0
+interfaces: []
+features: []
+parameters: []
+postfixes: []
+commands: []
+properties:
+  SECNode: []
+  System: []
+  Module: []
+  Parameter: []
+  Command: []
+datainfo: []

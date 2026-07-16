@@ -1,0 +1,49 @@
+---
+kind: Repository
+name: "TestCompoundDatainfoTypes"
+version: 1
+description: "Test fixture for compound datainfo type checking"
+files: []
+systems: []
+interfaces: []
+features: []
+parameters: []
+postfixes: []
+commands: []
+properties:
+  SECNode: []
+  System: []
+  Module: []
+  Parameter: []
+  Command: []
+datainfo:
+  - test_tuple_di:1
+  - test_struct_di:1
+
+---
+kind: Datainfo
+name: test_tuple_di
+version: 1
+description: "Datainfo with a tuple-typed dataprop containing datainfo."
+dataty: string
+dataprops:
+  items:
+    dataty:
+      type: tuple
+      members:
+        - datainfo
+        - string
+
+---
+kind: Datainfo
+name: test_struct_di
+version: 1
+description: "Datainfo with a named struct dataprop containing datainfo."
+dataty: string
+dataprops:
+  items:
+    dataty:
+      type: struct
+      members:
+        field1: datainfo
+        field2: string

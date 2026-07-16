@@ -1,0 +1,6 @@
+- test with custom interface classes
+- mode for hinting at possible other properties?
+- loading schema from github OR built-in
+- link to spec for errors
+- show description in diagnostics?
+- diag name instead of visitor name?

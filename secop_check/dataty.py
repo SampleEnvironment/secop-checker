@@ -103,8 +103,8 @@ class Int(Dataty):
     maximum = None
 
     def __init__(self, dct: dict[str, Any]) -> None:
-        self.minimum = dct.get('minimum')
-        self.maximum = dct.get('maximum')
+        self.minimum = dct.get('min')
+        self.maximum = dct.get('max')
 
     def validate(self, value: object) -> bool:
         if not (isinstance(value, int) or
@@ -176,7 +176,7 @@ class Tuple(Dataty):
         if len(value) != len(self.itemtypes):
             return False
         return all(itemtype.validate(item)
-                   for itemtype, item in zip(self.itemtypes, value))
+                   for itemtype, item in zip(self.itemtypes, value, strict=True))
 
     def describe(self) -> str:
         if self.itemtypes is None:
@@ -239,6 +239,9 @@ class OneOf(Dataty):
         return isinstance(value, str) and value in self.values
 
     def describe(self) -> str:
+        if len(self.values) > 5:  # noqa: PLR2004
+            return 'one of: ' + ', '.join(self.values[:5]) + \
+                f' (and {len(self.values) - 5} more)'
         return 'one of: ' + ', '.join(self.values)
 
 

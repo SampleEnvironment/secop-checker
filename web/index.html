@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SECoP validator</title>
+  <link href="pico.min.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.js"></script>
+</head>
+<body>
+  <main class="container">
+      <section>
+        <nav>
+          <ul>
+            <li><h3>SECoP descriptive data validator</h3></li>
+          </ul>
+          <ul>
+            <li>
+              <div class="status-badge" id="status">
+                <span class="spinner" id="spinner"></span>
+                <span id="status-text">Loading Python…</span>
+              </div>
+            </li>
+          </ul>
+        </nav>
+        <textarea id="inputBox"
+                  placeholder="Paste your SECoP JSON description here or drop a file!"
+                  rows="15" cols="33"
+                  ondragover="event.preventDefault()"
+                  ondrop="handleDrop(event)"></textarea>
+        <p class="explanation">Note: data is not sent to any server,
+          it is directly processed in the browser.</p>
+        <div class="action-row">
+          <button id="checkBtn" onclick="runCheck()" disabled>Check</button>
+          <label><input type="checkbox" checked id="annotateCb"> Annotate JSON</label>
+          <label>SECoP version:</label>
+          <select id="versionSelect" class="version-select">
+            <option value="1.0">1.0</option>
+            <option value="1.1">1.1</option>
+            <option value="2.0" selected>2.0</option>
+          </select>
+        </div>
+      </section>
+      <section>
+        <div id="results"></div>
+      </section>
+  </main>
+
+  <script>
+    let pyodide = null;
+
+    async function init() {
+      const statusText = document.getElementById('status-text');
+
+      try {
+        pyodide = await loadPyodide();
+        statusText.textContent = 'Loading micropip…';
+        await pyodide.loadPackage('micropip');
+        const micropip = pyodide.pyimport('micropip');
+        statusText.textContent = 'Loading secop-check…';
+        await micropip.install('./secop_check-0.1.0-py3-none-any.whl');
+        statusText.textContent = 'Ready';
+        document.getElementById('status').classList.add('ready');
+        document.getElementById('checkBtn').disabled = false;
+      } catch (e) {
+        statusText.textContent = 'Failed: ' + e.message;
+        document.getElementById('status').classList.add('failed');
+        console.error(e);
+      }
+    }
+
+    init();
+
+    // Support dropping files onto the textarea to read their contents.
+    function handleDrop(event) {
+      event.preventDefault();
+      const file = event.dataTransfer.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById('inputBox').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+
+    async function runCheck() {
+      const text = document.getElementById('inputBox').value;
+      const results = document.getElementById('results');
+      const annotated = document.getElementById('annotateCb').checked;
+      const version = document.getElementById('versionSelect').value;
+
+      if (!text.trim()) {
+        results.innerHTML = '<article class="diag hint">Please enter a SECoP description.</article>';
+        return;
+      }
+
+      results.innerHTML = '<div class="check-spinner-wrapper"><div class="spinner spinner-large"></div></div>';
+
+      // Give some time to update the spinner.
+      await new Promise(r => setTimeout(r, 20));
+
+      pyodide.globals.set('input_text', text);
+      pyodide.globals.set('check_version', version);
+      pyodide.globals.set('annotated_mode', annotated);
+
+      pyodide.runPython(`
+import json
+import traceback
+from secop_check.checker import Checker
+from secop_check.formatting import get_annotated_display
+from secop_check import Catastrophe, Severity
+
+def diag_to_obj(d):
+    return {
+        'severity': d.severity.name.lower(),
+        'step': d.step,
+        'msg': d.msg,
+        'ctx': ' / '.join(str(p) for p in d.ctx.path).strip(),
+    }
+
+try:
+    checker = Checker(check_version, [], output="none")
+    try:
+        checker.check(input_text)
+    except Catastrophe:
+        pass
+
+    diags = [diag_to_obj(d) for d in checker.get_diags()]
+    summary = {'hint': 0, 'warning': 0, 'error': 0, 'catastrophic': 0}
+    for d in diags:
+        summary[d['severity']] += 1
+    result = {'diags': diags, 'summary': summary}
+
+    if summary['catastrophic'] == 0 and annotated_mode:
+        lines, line_diags, unmatched, ranges = \
+            get_annotated_display(checker.get_diags(), input_text)
+        result['annotation'] = (
+            lines,
+            {str(l): [diag_to_obj(d) for d in v] for l, v in line_diags.items()},
+            [diag_to_obj(d) for d in unmatched],
+            ranges,
+        )
+
+except Exception as exc:
+    result = {
+        'diags': [{
+            'severity': 'catastrophic',
+            'step': 'python',
+            'msg': f'The checker encountered an error: {exc}',
+            'ctx': 'internal code',
+        }]
+    }
+      `);
+
+      const result = pyodide.globals.get('result').toJs();
+      console.log(result);
+
+      const summaryHtml = renderSummary(result.summary || {});
+      let listHtml = '';
+      if (result.diags.length === 0) {
+      } else if (result.annotation) {
+        listHtml = renderAnnotated(result);
+      } else {
+        for (const d of result.diags) listHtml += renderPanel(d);
+      }
+      results.innerHTML = summaryHtml + listHtml;
+    }
+
+    function renderPanel(diag) {
+      let html = '';
+      html += '<article class="diag ' + diag.severity + '">';
+      html += '<header>' + diag.severity.toUpperCase() + '</header>';
+      html += '<div class="diag-body">';
+      if (diag.step !== '')
+        html += '<span class="step">[' + escapeHtml(diag.step) + ']</span> ';
+      if (diag.ctx !== '')
+        html += 'in <span class="ctx">' + escapeHtml(diag.ctx) + ':</span>';
+      html += '<div class="msg">' + escapeHtml(diag.msg) + '</div>';
+      html += '</div></article>';
+      return html;
+    }
+
+    function renderSummary(summary) {
+      const items = ['<span>Messages:</span>'];
+      if (summary.catastrophic)
+        items.push('<span class="summary-catastrophic">Catastrophic: ' + summary.catastrophic + '</span>');
+      if (summary.error)
+        items.push('<span class="summary-error">Errors: ' + summary.error + '</span>');
+      if (summary.warning)
+        items.push('<span class="summary-warning">Warnings: ' + summary.warning + '</span>');
+      if (summary.hint)
+        items.push('<span class="summary-hint">Hints: ' + summary.hint + '</span>');
+      if (!items.length)
+        items.push('<span class="summary-ok">All good</span>');
+      return '<div class="summary-bar">' + items.join('') + '</div>';
+    }
+
+    function renderAnnotated(result) {
+      const [lines, lineDiags, unmatched, ranges] = result.annotation;
+
+      const rangeStarts = new Set(ranges.map(r => r[0]));
+      const rangeEnds = new Set(ranges.map(r => r[1] + 1));
+
+      const hasDiag = new Set();
+      for (const [s, e] of ranges) {
+        for (let line = s; line <= e; line++) {
+          if (lineDiags[line + 1]) { hasDiag.add(s); break; }
+        }
+      }
+
+      const closeBracket = {};
+      for (const [s, e] of ranges) {
+        const m = lines[e + 1].match(/[\]}]/);
+        if (m) closeBracket[s] = m[0];
+      }
+
+      let html = '';
+      for (const d of unmatched) html += renderPanel(d);
+      html += '<div class="json-tree">';
+
+      for (let i = 0; i < lines.length; i++) {
+        const diags = lineDiags[i + 1] || [];
+        const sev = diags.length ? 'has-diag ' + highestSeverity(diags) : '';
+
+        if (rangeEnds.has(i)) {
+          html += '<div class="tree-row">';
+          html += '<span class="tree-no-toggle">&nbsp;</span>';
+          html += '<span class="tree-json">' + highlightJson(lines[i]) + '</span>';
+          html += '</div></div>'; // close tree-row and tree-node
+        } else if (rangeStarts.has(i)) {
+          const collapsed = !hasDiag.has(i);
+          const cb = closeBracket[i];
+          const closeClass = cb === '}' ? ' close-brace' : cb === ']' ? ' close-bracket' : '';
+          html += '<div class="tree-node' + (collapsed ? ' collapsed' : '') + closeClass + '">';
+          html += '<div class="tree-row' + (sev ? ' ' + sev : '') + '">';
+          html += '<span class="tree-toggle" onclick="toggleTree(this)"></span>';
+          html += '<span class="tree-json">' + highlightJson(lines[i]) + '</span>';
+          if (diags.length) html += renderDiagsInline(diags);
+          html += '</div>';
+        } else {
+          html += '<div class="tree-row' + (sev ? ' ' + sev : '') + '">';
+          html += '<span class="tree-no-toggle">&nbsp;</span>';
+          html += '<span class="tree-json">' + highlightJson(lines[i]) + '</span>';
+          if (diags.length) html += renderDiagsInline(diags);
+          html += '</div>';
+        }
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    const _sevOrder = {catastrophic: 4, error: 3, warning: 2, hint: 1};
+    function highestSeverity(diags) {
+      let best = 'hint';
+      for (const d of diags)
+        if (_sevOrder[d.severity] > _sevOrder[best]) best = d.severity;
+      return best;
+    }
+
+    function highlightJson(line) {
+      const tokenRe = /("(?:[^"\\]|\\.)*")\s*:|("(?:[^"\\]|\\.)*")|(\btrue\b|\bfalse\b|\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+      return line.replace(tokenRe, function(match, key, str, lit, num) {
+        if (key) return '<span class="j-key">' + escapeHtml(key) + '</span>:';
+        if (str) return '<span class="j-str">' + escapeHtml(str) + '</span>';
+        if (lit) return '<span class="j-lit">' + escapeHtml(lit) + '</span>';
+        if (num) return '<span class="j-num">' + escapeHtml(num) + '</span>';
+        return escapeHtml(match);
+      });
+    }
+
+    function renderDiagsInline(diags) {
+      let html = '<span class="tree-diags">';
+      for (const d of diags) {
+        html += '<span class="ann-badge ' + d.severity + '">' + d.severity.toUpperCase() + '</span>';
+        if (d.step) html += ' <span class="ann-step">[' + escapeHtml(d.step) + ']</span>';
+        html += ': ' + escapeHtml(d.msg);
+        html += '<br>';
+      }
+      html += '</span>';
+      return html;
+    }
+
+    function toggleTree(el) {
+      el.parentElement.parentElement.classList.toggle('collapsed');
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>

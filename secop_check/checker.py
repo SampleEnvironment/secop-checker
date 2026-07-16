@@ -24,11 +24,15 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union, cast
+from importlib import resources
+from typing import TYPE_CHECKING, Any, cast
 
 from . import DiagnosticBase, Severity
+from . import context as ctx
+from .dataty import Array as DatatyArray
 from .dataty import Datainfo as DatatyDatainfo
+from .dataty import Struct as DatatyStruct
+from .dataty import Tuple as DatatyTuple
 from .schema import Command, Datainfo, Inventory, Loader, Parameter, Property
 from .visitors import VISITORS, BaseVisitor
 
@@ -36,14 +40,14 @@ if TYPE_CHECKING:
     from .dataty import Dataty
 
 desc_dict = dict[str, Any]
-source = Union[str, None]
+source = str | None
 
 
 class Checker(DiagnosticBase):
     def __init__(self, version: str, additional: list[str], output: str) -> None:
         super().__init__(output)
 
-        self.loader = Loader(Path(__file__).parents[1] / 'defs', output)
+        self.loader = Loader(resources.files('secop_check.defs'), output)
         self.loader.set_diags(self._diags)
         self.loader.load(version, additional)
 
@@ -71,7 +75,7 @@ class Checker(DiagnosticBase):
                 f'invalid json at line {e.lineno} column {e.colno}:\n{e.msg}') \
                 from None
 
-        schemata = desc_obj.get('schemata', {})
+        schemata = desc_obj.get('schemata', [])
         for uri in schemata:
             self.loader.load_repo(uri)
 
@@ -122,8 +126,39 @@ class Checker(DiagnosticBase):
         if not dataty.validate(actual):
             self.emit(Severity.ERROR,
                       f'expected {dataty.describe()}, got {actual!r}')
+            return
         if isinstance(dataty, DatatyDatainfo):
             self.check_datainfo(cast('dict', actual))
+        elif isinstance(dataty, DatatyArray) \
+                and isinstance(dataty.itemtype, DatatyDatainfo):
+            items = cast('list', actual)
+            for i, item in enumerate(items):
+                with self.with_context(ctx.Index(i)):
+                    self.check_datainfo(cast('dict', item))
+        elif isinstance(dataty, DatatyTuple) and dataty.itemtypes:
+            items = cast('list', actual)
+            for i, (itemtype, item) in enumerate(zip(dataty.itemtypes, items,
+                                                     strict=False)):
+                if isinstance(itemtype, DatatyDatainfo):
+                    with self.with_context(ctx.Index(i)):
+                        self.check_datainfo(cast('dict', item))
+        elif isinstance(dataty, DatatyStruct):
+            actual_dict = cast('dict', actual)
+            if dataty.fieldtype is not None \
+                    and isinstance(dataty.fieldtype, DatatyDatainfo):
+                for val in actual_dict.values():
+                    self.check_datainfo(cast('dict', val))
+            elif dataty.fieldtypes:
+                unknown = set(actual_dict) - set(dataty.fieldtypes)
+                if unknown:
+                    self.emit(Severity.WARNING,
+                              f'unknown struct keys: '
+                              f'{", ".join(sorted(unknown))}')
+                for key, fieldtype in dataty.fieldtypes.items():
+                    if isinstance(fieldtype, DatatyDatainfo) \
+                            and key in actual_dict:
+                        with self.with_context(ctx.Item(key)):
+                            self.check_datainfo(cast('dict', actual_dict[key]))
 
     def check_datainfo(self, description: desc_dict) -> None:
         """Check validity of a datainfo description."""
@@ -132,23 +167,23 @@ class Checker(DiagnosticBase):
             return
         if 'type' not in description:
             self.emit(Severity.ERROR, 'datainfo does not have a type')
-            description['type'] = 'unknown'
+            return
 
         descty = description['type']
 
         # handle commands recursively
         if descty == 'command':
             if 'argument' in description:
-                with self.with_context('argument', ''):
+                with self.with_context(ctx.Argument()):
                     self.check_datainfo(description['argument'])
             if 'result' in description:
-                with self.with_context('result', ''):
+                with self.with_context(ctx.Result()):
                     self.check_datainfo(description['result'])
             return
 
         basic = self._inv.get(Datainfo, descty)
         if basic is None:
-            self.emit(Severity.ERROR, f'unknown datainfo type {descty}')
+            self.emit(Severity.ERROR, f'unknown datainfo type {descty!r}')
             return
 
         actual_dprops = set(description) - {'type'}
@@ -156,17 +191,17 @@ class Checker(DiagnosticBase):
             if dprop not in actual_dprops:
                 if not dpropdesc.optional:
                     self.emit(Severity.ERROR,
-                              'missing required property for datainfo '
-                              f'{descty}: {dprop}')
+                              'missing required property for datainfo type '
+                              f'{descty}: {dprop!r}')
             else:
-                with self.with_context('datainfo ' + descty, dprop):
+                with self.with_context(ctx.Datainfo(descty, dprop)):
                     self.check_dataty(dpropdesc.dataty, description[dprop])
             actual_dprops.discard(dprop)
 
         if actual_dprops:
             self.emit(Severity.WARNING,
-                      'unknown properties given for datainfo '
-                      f'{descty}: {actual_dprops}')
+                      'unknown properties given for datainfo type '
+                      f"{descty}: {', '.join(map(repr, actual_dprops))}")
 
     def visit_descriptive_data(self, desc: desc_dict) -> None:
         for visitorcls in VISITORS:
@@ -174,18 +209,23 @@ class Checker(DiagnosticBase):
             self.visit_with(desc, visitorcls(self))
 
     def visit_with(self, desc: desc_dict, visitor: BaseVisitor) -> None:
-        with self.with_context('SECNode', ''):
+        # TODO: better context for the SECNode itself, e.g. the file/host
+        with self.with_context(ctx.SECNode()):
             visitor.visit_secnode(desc)
 
             for prop, propdesc in desc.items():
                 if prop == 'modules':
                     for module, moddesc in propdesc.items():
-                        with self.with_context('Module', module):
+                        with self.with_context(ctx.Module(module)):
                             self._visit_module(module, moddesc, visitor)
+
+                elif prop == 'systems':
+                    # handled by SystemChecker in visit_secnode
+                    pass
 
                 # other node properties
                 else:
-                    with self.with_context('Property', prop):
+                    with self.with_context(ctx.Property(prop)):
                         visitor.visit_property('SECNode', prop, propdesc)
 
             visitor.finish()
@@ -198,23 +238,25 @@ class Checker(DiagnosticBase):
             if prop == 'accessibles':
                 for accname, accdesc in propdesc.items():
                     datainfo = accdesc.get('datainfo', {})
-                    ty = 'Command' if datainfo.get('type') == 'command' \
-                        else 'Parameter'
-                    with self.with_context(ty, accname):
-                        if ty == 'Command':
+                    is_command = datainfo.get('type') == 'command'
+                    ty = 'Command' if is_command else 'Parameter'
+                    ctx_item = ctx.Command(accname) if is_command \
+                        else ctx.Parameter(accname)
+                    with self.with_context(ctx_item):
+                        if is_command:
                             visitor.visit_command(modname, accname, accdesc)
                         else:
                             visitor.visit_parameter(modname, accname, accdesc)
 
                         for aprop, apropdesc in accdesc.items():
-                            with self.with_context('Property', aprop):
+                            with self.with_context(ctx.Property(aprop)):
                                 visitor.visit_property(ty, aprop, apropdesc)
 
                         visitor.finish_accessible(accdesc)
 
             # other module properties
             else:
-                with self.with_context('Property', prop):
+                with self.with_context(ctx.Property(prop)):
                     visitor.visit_property('Module', prop, propdesc)
 
             visitor.finish_module(modname)

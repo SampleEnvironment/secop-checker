@@ -1,5 +1,8 @@
 #!/usr/bin/env -S uv run --script
 import os
-os.system('uv run --group typing mypy secop_check')
-os.system('uv run --group typing pyright secop_check')
-os.system('uv run --group typing ty check --output-format concise')
+print('--- mypy ---')
+os.system('uv run --group typing mypy secop_check test 2>&1')
+print('--- pyright ---')
+os.system('uv run --group typing pyright secop_check test 2>&1')
+print('--- ty ---')
+os.system('uv run --group typing ty check --output-format concise 2>&1')

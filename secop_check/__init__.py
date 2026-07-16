@@ -21,14 +21,24 @@
 #
 # *****************************************************************************
 
+from __future__ import annotations
+
 import json
 import socket
 import sys
-from collections.abc import Generator
+import traceback
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from .context import ContextItem
+
+from rich.console import Console
 
 
 # int-enum?
@@ -42,10 +52,17 @@ class Severity(Enum):
     # something that makes the checking stop directly
     CATASTROPHIC = 3
 
+    def __gt__(self, other: Severity) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, other: Severity) -> bool:
+        return self.value >= other.value
+
 
 @dataclass
 class Context:
-    path: list[tuple[str, str]]
+    path: list[ContextItem]
+    traceback: str = ''
     # system?
 
 
@@ -55,6 +72,7 @@ class Diagnostic:
     step: str
     ctx: Context
     msg: str
+    traceback: str = ''
 
 
 class Catastrophe(Exception):  # noqa: N818
@@ -68,6 +86,7 @@ class DiagnosticBase:
         self._step = ''
         self._context = Context(path=[])
         self._out = sys.stdout
+        self._richconsole = Console(file=self._out)
 
     def get_diags(self) -> list[Diagnostic]:
         return self._diags
@@ -76,8 +95,8 @@ class DiagnosticBase:
         self._diags = diags
 
     @contextmanager
-    def with_context(self, kind: str, name: str) -> Generator:
-        self._context.path.append((kind, name))
+    def with_context(self, item: ContextItem) -> Generator:
+        self._context.path.append(item)
         yield
         self._context.path.pop()
 
@@ -87,8 +106,9 @@ class DiagnosticBase:
         self._print(diag)
 
     def emit_catastrophic(self, msg: str) -> type[Exception]:
-        diag = Diagnostic(Severity.CATASTROPHIC, self._step,
-                          deepcopy(self._context), msg)
+        ctx = deepcopy(self._context)
+        ctx.traceback = ''.join(traceback.format_stack()[:-1]).rstrip()
+        diag = Diagnostic(Severity.CATASTROPHIC, self._step, ctx, msg)
         self._diags.append(diag)
         self._print(diag)
         return Catastrophe
@@ -99,16 +119,12 @@ class DiagnosticBase:
                 'severity': diag.severity.name,
                 'step': diag.step,
                 'msg': diag.msg,
-                'ctx': diag.ctx.path,
+                'ctx': [str(item) for item in diag.ctx.path],
             }))
             self._out.write('\n')
         elif self._output == 'text':
-            step = f' [{diag.step}]' if diag.step else ''
-            ctx = ' / '.join(f'{ty} {name}'.strip()
-                             for ty, name in diag.ctx.path).strip()
-            if ctx:
-                ctx += ': '
-            self._out.write(f'{diag.severity.name}{step}: {ctx}{diag.msg}\n')
+            from .formatting import print_diag_panel  # noqa: PLC0415
+            print_diag_panel(diag, self._richconsole)
 
 
 def load_from_node(addr: str) -> tuple[str, str]:

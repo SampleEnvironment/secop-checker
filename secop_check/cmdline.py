@@ -23,14 +23,28 @@
 
 import argparse
 import sys
+import traceback
 
-import secop_check.checker
+from rich.console import Console
+
+from . import (
+    Catastrophe,
+    Context,
+    Diagnostic,
+    DiagnosticBase,
+    Severity,
+    load_from_node,
+)
+from .checker import Checker
+from .formatting import render_annotated, render_summary
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('infile', help='input file with descriptive JSON '
                         'or a SEC node address in the form host:port')
+    parser.add_argument('-a', '--annotate', action='store_true',
+                        help='annotate diagnostics onto pretty-printed JSON')
     parser.add_argument('--json', action='store_true', help='output json')
     parser.add_argument('--version',
                         # TODO: other source
@@ -47,17 +61,35 @@ def main() -> None:
     args = parse_args(sys.argv[1:])
     version = args.version
 
-    if ':' in args.infile:
-        version, desc = secop_check.load_from_node(args.infile)
-    elif args.infile == '-':
-        desc = sys.stdin.read()
+    if args.annotate:
+        output = 'none'  # we'll print separately afterwards
+    elif args.json:
+        output = 'json'
     else:
-        with open(args.infile, encoding='utf-8') as f:  # noqa: PTH123
-            desc = f.read()
+        output = 'text'
 
     try:
-        checker = secop_check.checker.Checker(version, args.schema,
-                                              'json' if args.json else 'text')
+        if ':' in args.infile:
+            version, desc = load_from_node(args.infile)
+        elif args.infile == '-':
+            desc = sys.stdin.read()
+        else:
+            with open(args.infile, encoding='utf-8') as f:  # noqa: PTH123
+                desc = f.read()
+
+        checker = Checker(version, args.schema, output)
         checker.check(desc)
-    except secop_check.Catastrophe:
+        if args.annotate:
+            render_annotated(checker.get_diags(), desc)
+        elif output == 'text':
+            render_summary(checker.get_diags(), Console())
+    except Catastrophe:
         sys.exit(1)
+    except Exception as e:  # noqa: BLE001
+        diag = Diagnostic(
+            Severity.CATASTROPHIC, '',
+            Context(path=[], traceback=traceback.format_exc()),
+            f'The checker encountered an internal error: {e}',
+        )
+        diag_out = 'json' if output == 'json' else 'text'
+        DiagnosticBase(diag_out)._print(diag)  # noqa: SLF001

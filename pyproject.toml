@@ -12,16 +12,18 @@ authors = [
 license = "GPL-2.0-or-later"
 description = "Schema checker for SECoP descriptive metadata"
 readme = "README.rst"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=5.4",
+    "requests>=1.0",
+    "rich>=14.0",
 ]
 
 [project.scripts]
 secop-check = "secop_check.cmdline:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "ruff"]
 typing = ["mypy", "types-PyYAML", "pyright", "ty"]
 
 [tool.uv]
@@ -29,6 +31,9 @@ cache-keys = [{file = "pyproject.toml"}, {git = {commit = true, tags = true}}]
 
 [tool.setuptools.packages.find]
 include = ["secop_check*"]
+
+[tool.setuptools.package-data]
+secop_check = ["defs/*.yaml"]
 
 [tool.setuptools_scm]
 

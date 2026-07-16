@@ -25,24 +25,34 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 from urllib.parse import urlparse, urlunparse
-from urllib.request import urlopen
 
 if TYPE_CHECKING:
     # keep 3.9 compatibility (after that, from types import EllipsisType)
     import enum
+    from importlib.abc import Traversable
     class EllipsisType(enum.Enum):
         Ellipsis = ...
     Ellipsis = EllipsisType.Ellipsis  # noqa: A001
 
+import requests
 import yaml
 
 from . import DiagnosticBase, Severity
+from .context import File, Generic
 from .dataty import Dataty
 
 COMMON_META = {'kind', 'name', 'version', 'description'}
+
+
+def requests_open(uri: str) -> StringIO:
+    """Open a URI using requests and return a file-like object."""
+    resp = requests.get(uri, timeout=5)
+    resp.raise_for_status()
+    return StringIO(resp.text)
 
 
 @dataclass
@@ -129,7 +139,7 @@ class Feature(Entity):
 
 @dataclass
 class System(Entity):
-    base: System | None
+    bases: list[System]
     modules: dict[str, Interface]
     systems: dict[str, System]
 
@@ -215,27 +225,35 @@ class Inventory:
 
 
 class Loader(DiagnosticBase):
-    def __init__(self, root: Path, output: str) -> None:
+    def __init__(self, root: Traversable | Path, output: str) -> None:
         super().__init__(output)
         self._inv = Inventory()
         self._root = root
 
     def _load_one(self, uri: str, raw_objects: dict) -> None:
         try:
-            openfunc = urlopen if '://' in uri else open
+            openfunc = requests_open if '://' in uri else open
             with openfunc(uri) as f:
                 data = list(yaml.safe_load_all(f))
         except Exception as err:  # noqa: BLE001
             raise self.emit_catastrophic(
-                f'could not load yaml from {uri}: {err}') from None
+                f'could not load repository YAML from {uri}: {err}') from None
 
-        with self.with_context('File', uri):
+        with self.with_context(File(uri)):
             for spec in data:
-                # check for required fields for all objects
+                if not isinstance(spec, dict):
+                    self.emit(Severity.ERROR,
+                              'expected a YAML mapping, got '
+                              f'{type(spec).__name__}')
+                    continue
+                ok = True
                 for req in COMMON_META:
                     if req not in spec:
                         self.emit(Severity.ERROR, 'found yaml item without '
                                   f'required {req}: {spec!r}')
+                        ok = False
+                if not ok:
+                    continue
                 spec['description'] = spec['description'].strip()
                 raw_objects.setdefault(
                     spec['kind'], {}).setdefault(
@@ -255,7 +273,7 @@ class Loader(DiagnosticBase):
                                          f'schema repository in {uri}')
         repo = next(iter(repos.values()))
 
-        for filename in repo['files']:
+        for filename in repo.get('files', []):
             if '://' in uri:
                 parsed = urlparse(uri)
                 new_path = Path(parsed.path) / filename
@@ -269,14 +287,16 @@ class Loader(DiagnosticBase):
         return cast('Repository', Converter(self, raw_objects).convert(repo))
 
     def load(self, version: str, additional: list[str]) -> None:
-        ver_root = self._root / f'version-{version}.yaml'
+        ver_root = self._root.joinpath(f'version-{version}.yaml')
         if not ver_root.is_file():
             raise self.emit_catastrophic(
                 f'no root yaml found for version {version}')
-        self.load_repo(str(ver_root))
+        with self.with_context(Generic('Loading', f'version-{version}.yaml')):
+            self.load_repo(str(ver_root))
 
         for add in additional:
-            self.load_repo(add)
+            with self.with_context(Generic('Loading', add)):
+                self.load_repo(add)
 
     def get_inv(self) -> Inventory:
         return self._inv
@@ -298,23 +318,31 @@ class Converter:
             raise self.loader.emit_catastrophic(
                 f'unknown yaml kind {data["kind"]} in object {data["name"]!r}') \
                 from None
-        with self.loader.with_context(data['kind'], data['name']):
+        with self.loader.with_context(Generic(data['kind'], data['name'])):
             return method(data)
 
     def _resolve(self, kind: type[SomeEntity], reference: object) -> SomeEntity:
         kind_name = kind.__name__
         if isinstance(reference, dict):
             reference = cast('desc_dict', reference)
+            if not reference:
+                raise self.loader.emit_catastrophic(
+                    f'empty {kind_name} reference')
             name, props = reference.popitem()
             if reference:
                 reference[name] = props
-                self.loader.emit_catastrophic(
+                raise self.loader.emit_catastrophic(
                     f'invalid reference {reference}, needs to be '
                     'a 1-element dictionary')
+            if not isinstance(props, dict):
+                raise self.loader.emit_catastrophic(
+                    f'invalid {kind_name} inline definition for {name!r}: '
+                    f'expected a mapping, got {type(props).__name__}')
             if 'definition' not in props:
                 if 'description' not in props:
-                    self.loader.emit(Severity.ERROR, 'spec item must have a '
-                                     'description')
+                    if 'parameters' not in props and 'commands' not in props:
+                        self.loader.emit(Severity.ERROR,
+                                         'spec item must have a description')
                     props['description'] = ''
                 props['kind'] = kind_name
                 props['version'] = 0
@@ -367,9 +395,10 @@ class Converter:
 
     def _validate_datainfotype(self, name: str) -> None:
         """Ensure that a datainfo with the given name is registered."""
-        if name == 'any':
+        if name in ('any', 'none', 'parent', 'number'):
             return
-        if not self.raw.get('Datainfo', name):
+        if (name not in self.raw.get('Datainfo', {})
+                and self.inv.get(Datainfo, name, 1) is None):
             raise self.loader.emit_catastrophic(
                 f'no datainfo type with name {name!r} exists')
 
@@ -405,23 +434,23 @@ class Converter:
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
-            files=self._get(data, 'files', list),
+            files=self._get(data, 'files', list, []),
             systems=[self._resolve(System, x)
-                     for x in self._get(data, 'systems', list)],
+                     for x in self._get(data, 'systems', list, [])],
             interfaces=[self._resolve(Interface, x)
-                        for x in self._get(data, 'interfaces', list)],
+                        for x in self._get(data, 'interfaces', list, [])],
             features=[self._resolve(Feature, x)
-                      for x in self._get(data, 'features', list)],
+                      for x in self._get(data, 'features', list, [])],
             parameters=[self._resolve(Parameter, x)
-                        for x in self._get(data, 'parameters', list)],
+                        for x in self._get(data, 'parameters', list, [])],
             postfixes=[self._resolve(ParameterPostfix, x)
-                       for x in self._get(data, 'postfixes', list)],
+                       for x in self._get(data, 'postfixes', list, [])],
             commands=[self._resolve(Command, x)
-                      for x in self._get(data, 'commands', list)],
+                      for x in self._get(data, 'commands', list, [])],
             properties=self._mk_properties(
-                self._get(data, 'properties', dict)),
+                self._get(data, 'properties', dict, {})),
             datainfo=[self._resolve(Datainfo, x)
-                      for x in self._get(data, 'datainfo', list)],
+                      for x in self._get(data, 'datainfo', list, [])],
         )
         for system in repo.systems:
             self.inv.add_global(System, system.name)
@@ -449,19 +478,20 @@ class Converter:
     def _mk_properties(self, data: desc_dict) -> Properties:
         return Properties(
             node=[self._resolve(Property, x)
-                  for x in self._get(data, 'SECNode', list)],
+                  for x in self._get(data, 'SECNode', list, [])],
             system=[self._resolve(Property, x)
-                    for x in self._get(data, 'System', list)],
+                    for x in self._get(data, 'System', list, [])],
             module=[self._resolve(Property, x)
-                    for x in self._get(data, 'Module', list)],
+                    for x in self._get(data, 'Module', list, [])],
             parameter=[self._resolve(Property, x)
-                       for x in self._get(data, 'Parameter', list)],
+                       for x in self._get(data, 'Parameter', list, [])],
             command=[self._resolve(Property, x)
-                     for x in self._get(data, 'Command', list)],
+                     for x in self._get(data, 'Command', list, [])],
         )
 
     def _mk_system(self, data: desc_dict) -> System:
-        base = self._get(data, 'base', object, None)
+        bases = [self._resolve(System, x)
+                 for x in self._get(data, 'bases', list, [])]
         modules = {name: self._resolve(Interface,
                                        x if isinstance(x, str) else {name: x})
                    for (name, x) in self._get(data, 'modules', dict).items()}
@@ -472,7 +502,7 @@ class Converter:
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
-            base=self._resolve(System, base) if base else None,
+            bases=bases,
             modules=modules,
             systems=systems,
         )
@@ -558,18 +588,23 @@ class Converter:
 
     def _mk_datainfo(self, data: desc_dict) -> Datainfo:
         dprops = self._get(data, 'dataprops', dict)
+        dataprops: dict[str, Dataprop] = {}
+        for name, x in dprops.items():
+            if not isinstance(x, dict):
+                self.loader.emit(Severity.ERROR,
+                                 f'invalid dataprop {name!r}: expected a '
+                                 f'mapping, got {type(x).__name__}')
+                continue
+            dataprops[name] = Dataprop(
+                dataty=self._get_dataty(x, 'dataty'),
+                optional=self._get(x, 'optional', bool, default=False),
+                default=self._get(x, 'default', object, default=None),
+            )
         return Datainfo(
             name=self._get(data, 'name', str),
             version=self._get(data, 'version', int),
             link=self._get(data, 'link', str, None),
             description=self._get(data, 'description', str),
             dataty=self._get_dataty(data, 'dataty'),
-            dataprops={
-                name: Dataprop(
-                    dataty=self._get_dataty(x, 'dataty'),
-                    optional=self._get(x, 'optional', bool, default=False),
-                    default=self._get(x, 'default', object, default=None),
-                )
-                for (name, x) in dprops.items()
-            },
+            dataprops=dataprops,
         )
